@@ -37,6 +37,17 @@
 var HEADERS = ['Task', 'Description', 'Date', 'Start Time', 'Stop Time', 'Duration', 'Status'];
 var DATE_FORMAT = 'M/d/yyyy';
 var TIME_FORMAT = 'h:mm:ss am/pm';
+var TEXT_FORMAT = '@';
+// One format per HEADERS column. Sheets infers a cell's type from its value
+// (a number-looking string becomes a real number, a time-looking string like
+// "00:00:50" becomes a Date at Sheets' 1899-12-30 epoch) unless the cell's
+// format is already set to something other than "Automatic" *before* the
+// value is written — setting format afterward doesn't undo an already-applied
+// coercion. Task/Description/Duration/Status are forced to plain text so
+// arbitrary user text (e.g. a description that's just "2") and the built
+// HH:MM:SS duration string survive as literal text instead of silently
+// becoming a number or a garbled time-of-day.
+var COLUMN_FORMATS = [TEXT_FORMAT, TEXT_FORMAT, DATE_FORMAT, TIME_FORMAT, TIME_FORMAT, TEXT_FORMAT, TEXT_FORMAT];
 
 function doGet(e) {
   var params = (e && e.parameter) || {};
@@ -72,13 +83,13 @@ function getAllData() {
       var row = values[r];
       if (!row[0]) continue; // skip stray blank rows
       rows.push({
-        task: row[0],
-        description: row[1] || '',
+        task: String(row[0]),
+        description: row[1] ? String(row[1]) : '',
         date: row[2] instanceof Date ? row[2].toISOString() : null,
         startTime: row[3] instanceof Date ? row[3].toISOString() : null,
         stopTime: row[4] instanceof Date ? row[4].toISOString() : null,
-        duration: row[5] || null,
-        status: row[6] || null,
+        duration: row[5] ? String(row[5]) : null,
+        status: row[6] ? String(row[6]) : null,
       });
     }
     tabs[sheet.getName()] = rows;
@@ -129,8 +140,7 @@ function getOrCreateSheet(tabName) {
 }
 
 function appendStartRow(sheet, task, description, startTime) {
-  sheet.appendRow([task, description, startTime, startTime, '', '', 'Running']);
-  applyTimeFormats(sheet, sheet.getLastRow());
+  appendFormattedRow(sheet, [task, description, startTime, startTime, '', '', 'Running']);
 }
 
 function stopMatchingRow(sheet, task, description, stopTime) {
@@ -142,6 +152,10 @@ function stopMatchingRow(sheet, task, description, stopTime) {
       var startTime = new Date(row[3]); // Start Time cell holds the full timestamp
       var durationMs = stopTime.getTime() - startTime.getTime();
       var rowIndex = r + 1; // 1-based, header already accounted for
+      // These cells' format was already set to TIME_FORMAT/TEXT_FORMAT back
+      // when the row was created (appendFormattedRow, called from
+      // appendStartRow), so writing the value here doesn't trigger the
+      // auto-coercion described above — format-before-value already happened.
       sheet.getRange(rowIndex, 5).setValue(stopTime); // Stop Time
       sheet.getRange(rowIndex, 6).setValue(formatDuration(durationMs)); // Duration
       sheet.getRange(rowIndex, 7).setValue('Complete'); // Status
@@ -150,14 +164,18 @@ function stopMatchingRow(sheet, task, description, stopTime) {
   }
   // No matching Start row found (e.g. Start was made before this script existed,
   // or the queue delivered Stop out of order) — log it anyway instead of failing.
-  sheet.appendRow([task, description, stopTime, '', stopTime, '', 'Stop (no matching Start)']);
-  applyTimeFormats(sheet, sheet.getLastRow());
+  appendFormattedRow(sheet, [task, description, stopTime, '', stopTime, '', 'Stop (no matching Start)']);
 }
 
-function applyTimeFormats(sheet, rowIndex) {
-  sheet.getRange(rowIndex, 3).setNumberFormat(DATE_FORMAT);  // Date
-  sheet.getRange(rowIndex, 4).setNumberFormat(TIME_FORMAT);  // Start Time
-  sheet.getRange(rowIndex, 5).setNumberFormat(TIME_FORMAT);  // Stop Time
+// Appends a row with each column's format set *before* its value is
+// written, so Sheets' automatic type-detection never gets a chance to
+// coerce a plain-text value into a number or date/time.
+function appendFormattedRow(sheet, values) {
+  var rowIndex = sheet.getLastRow() + 1;
+  var range = sheet.getRange(rowIndex, 1, 1, values.length);
+  range.setNumberFormats([COLUMN_FORMATS.slice(0, values.length)]);
+  range.setValues([values]);
+  return rowIndex;
 }
 
 function formatDuration(ms) {
