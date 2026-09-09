@@ -8,7 +8,6 @@ const LS_LOG = 'tt_log';
 const LS_RECENT_TASKS = 'tt_recent_tasks';
 const LS_METRICS_CACHE = 'tt_metrics_cache';
 const LOG_MAX = 50;
-const METRICS_STALE_MS = 30000;
 
 const DB_NAME = 'tt-db';
 const DB_VERSION = 1;
@@ -376,18 +375,12 @@ async function appendPendingNote() {
   if (q.length > 0) el.metricsUpdated.textContent += ` • ${q.length} pending sync`;
 }
 
-async function loadMetrics(force) {
+async function loadMetrics() {
   const cache = readMetricsCache();
   if (cache) {
     renderMetrics(computeMetrics(cache.tabs), cache.fetchedAt);
   } else {
     el.metricsUpdated.textContent = 'Loading…';
-  }
-
-  const freshEnough = !!cache && (Date.now() - new Date(cache.fetchedAt).getTime()) < METRICS_STALE_MS;
-  if (!force && freshEnough) {
-    await appendPendingNote();
-    return;
   }
 
   const webhookUrl = localStorage.getItem(LS_WEBHOOK);
@@ -595,7 +588,7 @@ function switchView(view) {
   el.viewMetrics.hidden = !showMetrics;
   el.navTracker.classList.toggle('active', !showMetrics);
   el.navMetrics.classList.toggle('active', showMetrics);
-  if (showMetrics) loadMetrics(false);
+  if (showMetrics) loadMetrics();
 }
 
 function init() {
@@ -618,7 +611,7 @@ function init() {
 
   el.navTracker.addEventListener('click', () => switchView('tracker'));
   el.navMetrics.addEventListener('click', () => switchView('metrics'));
-  el.refreshMetrics.addEventListener('click', () => loadMetrics(true));
+  el.refreshMetrics.addEventListener('click', () => loadMetrics());
 
   el.settingsToggle.addEventListener('click', () => {
     el.settingsCard.hidden = !el.settingsCard.hidden;

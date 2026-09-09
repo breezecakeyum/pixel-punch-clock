@@ -2,7 +2,7 @@
 
 // Bump this on every deploy that changes any app-shell file, so clients
 // pick up the new version instead of serving a stale cached copy forever.
-const CACHE_NAME = 'time-tracker-shell-v1';
+const CACHE_NAME = 'time-tracker-shell-v2';
 
 const APP_SHELL = [
   './',
@@ -39,18 +39,22 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
+  // Matched and written through this SW's own named cache specifically —
+  // not the global caches.match(), which searches every cache this origin
+  // has ever created in an unspecified order. If an old version's cache
+  // hasn't finished being deleted yet, a global match could still resolve
+  // to its stale entry; scoping to CACHE_NAME rules that out.
   event.respondWith(
-    caches.match(request).then((cached) => {
-      const networkFetch = fetch(request)
-        .then((response) => {
-          if (response && response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          }
-          return response;
-        })
-        .catch(() => cached || caches.match('./index.html'));
-      return cached || networkFetch;
-    })
+    caches.open(CACHE_NAME).then((cache) =>
+      cache.match(request).then((cached) => {
+        const networkFetch = fetch(request)
+          .then((response) => {
+            if (response && response.ok) cache.put(request, response.clone());
+            return response;
+          })
+          .catch(() => cached || cache.match('./index.html'));
+        return cached || networkFetch;
+      })
+    )
   );
 });
