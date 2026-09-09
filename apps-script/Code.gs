@@ -11,12 +11,16 @@
  *      - Who has access: Anyone
  *   4. Copy the /exec URL into the app's Settings panel.
  *
- * Each tab (sheet) gets a header row: Task | Tab | Start Time | End Time | Duration | Status
+ * Each tab (sheet) gets a header row: Task | Description | Start Time | End Time | Duration | Status
  * "Start" appends a new row with Status = Running.
  * "Stop" finds that task's most recent Running row and fills in End Time / Duration.
+ *
+ * The request's "tab" field routes the row to the matching sheet (creating it
+ * if needed) but isn't written into the row itself — which sheet the row is
+ * on already says that.
  */
 
-var HEADERS = ['Task', 'Tab', 'Start Time', 'End Time', 'Duration', 'Status'];
+var HEADERS = ['Task', 'Description', 'Start Time', 'End Time', 'Duration', 'Status'];
 
 function doGet() {
   return ContentService.createTextOutput('Time Tracker API is running.')
@@ -28,6 +32,7 @@ function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents);
     var task = String(body.task || '').trim();
+    var description = String(body.description || '').trim();
     var action = String(body.action || '').trim();
     var tabName = String(body.tab || 'Work').trim() || 'Work';
     var timestamp = body.timestamp ? new Date(body.timestamp) : new Date();
@@ -39,9 +44,9 @@ function doPost(e) {
     var sheet = getOrCreateSheet(tabName);
 
     if (action === 'Start') {
-      appendStartRow(sheet, task, tabName, timestamp);
+      appendStartRow(sheet, task, description, timestamp);
     } else {
-      stopMatchingRow(sheet, task, tabName, timestamp);
+      stopMatchingRow(sheet, task, description, timestamp);
     }
 
     result = { ok: true, action: action, task: task, tab: tabName };
@@ -64,11 +69,11 @@ function getOrCreateSheet(tabName) {
   return sheet;
 }
 
-function appendStartRow(sheet, task, tabName, startTime) {
-  sheet.appendRow([task, tabName, startTime, '', '', 'Running']);
+function appendStartRow(sheet, task, description, startTime) {
+  sheet.appendRow([task, description, startTime, '', '', 'Running']);
 }
 
-function stopMatchingRow(sheet, task, tabName, stopTime) {
+function stopMatchingRow(sheet, task, description, stopTime) {
   var data = sheet.getDataRange().getValues();
   // Search bottom-up for this task's most recent still-running row.
   for (var r = data.length - 1; r >= 1; r--) {
@@ -85,7 +90,7 @@ function stopMatchingRow(sheet, task, tabName, stopTime) {
   }
   // No matching Start row found (e.g. Start was made before this script existed,
   // or the queue delivered Stop out of order) — log it anyway instead of failing.
-  sheet.appendRow([task, tabName, '', stopTime, '', 'Stop (no matching Start)']);
+  sheet.appendRow([task, description, '', stopTime, '', 'Stop (no matching Start)']);
 }
 
 function formatDuration(ms) {

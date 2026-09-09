@@ -159,11 +159,13 @@ const el = {
   timerTab: document.getElementById('timer-tab'),
   form: document.getElementById('tracker-form'),
   taskInput: document.getElementById('task-input'),
+  descriptionInput: document.getElementById('description-input'),
   tabInput: document.getElementById('tab-input'),
   toggleBtn: document.getElementById('toggle-btn'),
   installCard: document.getElementById('install-card'),
   installBtn: document.getElementById('install-btn'),
   retrySync: document.getElementById('retry-sync'),
+  clearLog: document.getElementById('clear-log'),
   logList: document.getElementById('log-list'),
   logEmpty: document.getElementById('log-empty'),
   toast: document.getElementById('toast'),
@@ -203,8 +205,10 @@ function renderTimer() {
     el.toggleBtn.textContent = 'Stop';
     el.toggleBtn.classList.add('stop');
     el.taskInput.value = active.task;
+    el.descriptionInput.value = active.description || '';
     el.tabInput.value = active.tab;
     el.taskInput.disabled = true;
+    el.descriptionInput.disabled = true;
     el.tabInput.disabled = true;
   } else {
     el.timerTask.textContent = 'Not tracking';
@@ -213,6 +217,7 @@ function renderTimer() {
     el.toggleBtn.textContent = 'Start';
     el.toggleBtn.classList.remove('stop');
     el.taskInput.disabled = false;
+    el.descriptionInput.disabled = false;
     el.tabInput.disabled = false;
   }
 }
@@ -234,7 +239,8 @@ function renderLog() {
     title.textContent = `${e.action} · ${e.task}`;
     const sub = document.createElement('div');
     sub.className = 'entry-sub';
-    sub.textContent = `${e.tab} · ${new Date(e.timestamp).toLocaleString()}`;
+    const subParts = [e.tab, e.description, new Date(e.timestamp).toLocaleString()].filter(Boolean);
+    sub.textContent = subParts.join(' · ');
     main.appendChild(title);
     main.appendChild(sub);
 
@@ -291,7 +297,9 @@ async function flushQueue() {
           method: 'POST',
           mode: 'no-cors',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ task: item.task, tab: item.tab, action: item.action, timestamp: item.timestamp }),
+          // "tab" still has to travel here even though it's not written into the
+          // row — it's the only way Code.gs knows which sheet to route the row to.
+          body: JSON.stringify({ task: item.task, tab: item.tab, description: item.description, action: item.action, timestamp: item.timestamp }),
         });
         await queueRemove(item.id);
         setLogStatus(item.id, 'synced');
@@ -315,16 +323,17 @@ async function handleSubmit(ev) {
 
   if (!active) {
     const task = el.taskInput.value.trim();
+    const description = el.descriptionInput.value.trim();
     const tab = el.tabInput.value.trim() || 'Work';
     if (!task) return;
 
-    const item = { task, tab, action: 'Start', timestamp };
+    const item = { task, description, tab, action: 'Start', timestamp };
     const id = await queueAdd(item);
     addLogEntry({ qid: id, ...item, status: 'pending' });
-    setActiveTask({ task, tab, startedAt: timestamp });
+    setActiveTask({ task, description, tab, startedAt: timestamp });
     rememberTask(task);
   } else {
-    const item = { task: active.task, tab: active.tab, action: 'Stop', timestamp };
+    const item = { task: active.task, description: active.description, tab: active.tab, action: 'Stop', timestamp };
     const id = await queueAdd(item);
     addLogEntry({ qid: id, ...item, status: 'pending' });
     setActiveTask(null);
@@ -379,6 +388,19 @@ function init() {
     if (!localStorage.getItem(LS_WEBHOOK)) { toast('Set the webhook URL in settings first'); return; }
     toast('Syncing…');
     flushQueue();
+  });
+
+  el.clearLog.addEventListener('click', async () => {
+    const q = await queueAll();
+    const warning = q.length > 0
+      ? `Clear all activity? This also discards ${q.length} entr${q.length === 1 ? 'y' : 'ies'} still queued and not yet synced.`
+      : 'Clear all activity?';
+    if (!confirm(warning)) return;
+    writeLog([]);
+    for (const item of q) await queueRemove(item.id);
+    renderLog();
+    renderPendingBadge();
+    toast('Activity cleared');
   });
 
   window.addEventListener('online', () => { renderStatusDot(); flushQueue(); });

@@ -252,6 +252,8 @@
     margin-bottom: 10px;
   }
   .log-header h2 { font-size: 14px; margin: 0; color: var(--text-dim); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+  .log-header-actions { display: flex; gap: 8px; }
+  .log-header-actions .btn-secondary { width: auto; padding: 6px 12px; }
   ul#log-list {
     list-style: none;
     margin: 0;
@@ -353,6 +355,10 @@
         <datalist id="task-options"></datalist>
       </div>
       <div class="field">
+        <label for="description-input">Description (optional)</label>
+        <input type="text" id="description-input" placeholder="e.g. Replied to invoice questions" autocomplete="off" autocapitalize="sentences" />
+      </div>
+      <div class="field">
         <label for="tab-input">Tab (Google Sheet tab)</label>
         <input type="text" id="tab-input" list="tab-options" placeholder="Work" autocomplete="off" autocapitalize="words" required />
         <datalist id="tab-options">
@@ -371,7 +377,10 @@
   <section class="card">
     <div class="log-header">
       <h2>Recent activity</h2>
-      <button class="btn-secondary" id="retry-sync" type="button" style="width:auto; padding:6px 12px;">Sync now</button>
+      <div class="log-header-actions">
+        <button class="btn-secondary" id="retry-sync" type="button">Sync now</button>
+        <button class="btn-secondary" id="clear-log" type="button">Clear</button>
+      </div>
     </div>
     <ul id="log-list"></ul>
     <p class="empty-state" id="log-empty">No activity yet.</p>
