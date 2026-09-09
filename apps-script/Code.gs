@@ -24,15 +24,66 @@
  * The request's "tab" field routes the row to the matching sheet (creating it
  * if needed) but isn't written into the row itself — which sheet the row is
  * on already says that.
+ *
+ * GET ?action=data returns every tab's rows as JSON for the app's Metrics
+ * view. It's requested via a <script> tag (JSONP), not fetch(): a normal
+ * cross-origin fetch needs Access-Control-Allow-Origin on the actual
+ * response to be readable, which Apps Script doesn't reliably send, while a
+ * <script src="..."> load is never subject to CORS at all. Pass
+ * &callback=NAME to get the JSON wrapped as `NAME(...)`; without it, the
+ * endpoint just returns plain JSON (e.g. for manual testing in a browser).
  */
 
 var HEADERS = ['Task', 'Description', 'Date', 'Start Time', 'Stop Time', 'Duration', 'Status'];
 var DATE_FORMAT = 'M/d/yyyy';
 var TIME_FORMAT = 'h:mm:ss am/pm';
 
-function doGet() {
+function doGet(e) {
+  var params = (e && e.parameter) || {};
+  if (params.action === 'data') {
+    return respondWithData(params);
+  }
   return ContentService.createTextOutput('Time Tracker API is running.')
     .setMimeType(ContentService.MimeType.TEXT);
+}
+
+function respondWithData(params) {
+  var payload = getAllData();
+  // Only safe JS-identifier characters — this string gets embedded directly
+  // into the response as executable code, so it must be sanitized.
+  var callback = String(params.callback || '').replace(/[^a-zA-Z0-9_]/g, '');
+  if (callback) {
+    return ContentService.createTextOutput(callback + '(' + JSON.stringify(payload) + ')')
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService.createTextOutput(JSON.stringify(payload))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function getAllData() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = ss.getSheets();
+  var tabs = {};
+  for (var i = 0; i < sheets.length; i++) {
+    var sheet = sheets[i];
+    var values = sheet.getDataRange().getValues();
+    var rows = [];
+    for (var r = 1; r < values.length; r++) {
+      var row = values[r];
+      if (!row[0]) continue; // skip stray blank rows
+      rows.push({
+        task: row[0],
+        description: row[1] || '',
+        date: row[2] instanceof Date ? row[2].toISOString() : null,
+        startTime: row[3] instanceof Date ? row[3].toISOString() : null,
+        stopTime: row[4] instanceof Date ? row[4].toISOString() : null,
+        duration: row[5] || null,
+        status: row[6] || null,
+      });
+    }
+    tabs[sheet.getName()] = rows;
+  }
+  return { ok: true, tabs: tabs };
 }
 
 function doPost(e) {

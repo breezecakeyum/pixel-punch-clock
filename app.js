@@ -6,7 +6,9 @@ const LS_WEBHOOK = 'tt_webhook_url';
 const LS_ACTIVE = 'tt_active_task';
 const LS_LOG = 'tt_log';
 const LS_RECENT_TASKS = 'tt_recent_tasks';
+const LS_METRICS_CACHE = 'tt_metrics_cache';
 const LOG_MAX = 50;
+const METRICS_STALE_MS = 30000;
 
 const DB_NAME = 'tt-db';
 const DB_VERSION = 1;
@@ -147,6 +149,10 @@ function setActiveTask(task) {
 /* ---------- DOM refs ---------- */
 
 const el = {
+  navTracker: document.getElementById('nav-tracker'),
+  navMetrics: document.getElementById('nav-metrics'),
+  viewTracker: document.getElementById('view-tracker'),
+  viewMetrics: document.getElementById('view-metrics'),
   statusDot: document.getElementById('status-dot'),
   pendingBadge: document.getElementById('pending-badge'),
   settingsToggle: document.getElementById('settings-toggle'),
@@ -169,6 +175,16 @@ const el = {
   logList: document.getElementById('log-list'),
   logEmpty: document.getElementById('log-empty'),
   toast: document.getElementById('toast'),
+  metricsUpdated: document.getElementById('metrics-updated'),
+  refreshMetrics: document.getElementById('refresh-metrics'),
+  statToday: document.getElementById('stat-today'),
+  statWeek: document.getElementById('stat-week'),
+  statMonth: document.getElementById('stat-month'),
+  trendChart: document.getElementById('trend-chart'),
+  topTasksList: document.getElementById('top-tasks-list'),
+  topTasksEmpty: document.getElementById('top-tasks-empty'),
+  tabBreakdownList: document.getElementById('tab-breakdown-list'),
+  tabBreakdownEmpty: document.getElementById('tab-breakdown-empty'),
 };
 
 /* ---------- Toast ---------- */
@@ -314,6 +330,233 @@ async function flushQueue() {
   }
 }
 
+/* ---------- Metrics: fetch + compute + render ---------- */
+
+// Reads via <script src> (JSONP), not fetch(): a normal cross-origin fetch
+// needs Access-Control-Allow-Origin on the actual response to be readable,
+// which Apps Script doesn't reliably send (same issue we hit on the write
+// path). A <script> load is never subject to CORS at all, so it sidesteps
+// the question entirely — see Code.gs's respondWithData for the other side.
+function fetchJSONP(baseUrl, params, timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    const cbName = `ttcb_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const url = new URL(baseUrl);
+    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+    url.searchParams.set('callback', cbName);
+
+    const script = document.createElement('script');
+    let settled = false;
+    const timer = setTimeout(() => finish(() => reject(new Error('Request timed out'))), timeoutMs);
+
+    function finish(action) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      delete window[cbName];
+      script.remove();
+      action();
+    }
+
+    window[cbName] = (data) => finish(() => resolve(data));
+    script.onerror = () => finish(() => reject(new Error('Failed to load')));
+    script.src = url.toString();
+    document.head.appendChild(script);
+  });
+}
+
+function readMetricsCache() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LS_METRICS_CACHE) || 'null');
+    return raw && raw.tabs ? raw : null;
+  } catch { return null; }
+}
+
+async function appendPendingNote() {
+  const q = await queueAll();
+  if (q.length > 0) el.metricsUpdated.textContent += ` • ${q.length} pending sync`;
+}
+
+async function loadMetrics(force) {
+  const cache = readMetricsCache();
+  if (cache) {
+    renderMetrics(computeMetrics(cache.tabs), cache.fetchedAt);
+  } else {
+    el.metricsUpdated.textContent = 'Loading…';
+  }
+
+  const freshEnough = !!cache && (Date.now() - new Date(cache.fetchedAt).getTime()) < METRICS_STALE_MS;
+  if (!force && freshEnough) {
+    await appendPendingNote();
+    return;
+  }
+
+  const webhookUrl = localStorage.getItem(LS_WEBHOOK);
+  if (webhookUrl && navigator.onLine) {
+    el.refreshMetrics.disabled = true;
+    try {
+      const data = await fetchJSONP(webhookUrl, { action: 'data' });
+      if (!data || data.ok !== true || !data.tabs) throw new Error('Unexpected response');
+      const fetchedAt = new Date().toISOString();
+      localStorage.setItem(LS_METRICS_CACHE, JSON.stringify({ tabs: data.tabs, fetchedAt }));
+      renderMetrics(computeMetrics(data.tabs), fetchedAt);
+    } catch {
+      if (cache) toast('Could not refresh metrics — showing last loaded data');
+      else el.metricsUpdated.textContent = 'Could not load metrics.';
+    } finally {
+      el.refreshMetrics.disabled = false;
+    }
+  } else if (!cache) {
+    el.metricsUpdated.textContent = !webhookUrl
+      ? 'Set the webhook URL in settings first.'
+      : "You're offline — connect to load metrics.";
+  }
+
+  await appendPendingNote();
+}
+
+function parseDurationToSeconds(str) {
+  if (!str || typeof str !== 'string') return 0;
+  const parts = str.split(':').map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return 0;
+  const [h, m, s] = parts;
+  return h * 3600 + m * 60 + s;
+}
+
+function sessionSeconds(row) {
+  if (row.status === 'Complete' && row.duration) return parseDurationToSeconds(row.duration);
+  // A still-running session (Start synced, Stop hasn't happened/synced yet)
+  // contributes its live elapsed time — safe to do since it's the same row
+  // that later gets its real duration filled in, never counted twice.
+  if (row.status === 'Running' && row.startTime) {
+    return Math.max(0, (Date.now() - new Date(row.startTime).getTime()) / 1000);
+  }
+  return 0;
+}
+
+function startOfLocalDay(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+function dayKey(d) { return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; }
+
+function computeMetrics(tabs) {
+  const now = new Date();
+  const todayStart = startOfLocalDay(now);
+  const dayOfWeek = (now.getDay() + 6) % 7; // Monday = 0
+  const weekStart = new Date(todayStart);
+  weekStart.setDate(weekStart.getDate() - dayOfWeek);
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  let totalToday = 0, totalWeek = 0, totalMonth = 0;
+  const byTask = new Map();
+  const byTab = new Map();
+
+  const trend = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(todayStart);
+    d.setDate(d.getDate() - i);
+    trend.push({ date: d, key: dayKey(d), seconds: 0 });
+  }
+  const trendByKey = new Map(trend.map((d) => [d.key, d]));
+
+  for (const [tabName, rows] of Object.entries(tabs)) {
+    for (const row of rows) {
+      const seconds = sessionSeconds(row);
+      if (seconds <= 0) continue;
+      const whenIso = row.startTime || row.date || row.stopTime;
+      if (!whenIso) continue;
+      const when = new Date(whenIso);
+
+      if (when >= todayStart) totalToday += seconds;
+      if (when >= weekStart) totalWeek += seconds;
+      if (when >= monthStart) totalMonth += seconds;
+
+      byTask.set(row.task, (byTask.get(row.task) || 0) + seconds);
+      byTab.set(tabName, (byTab.get(tabName) || 0) + seconds);
+
+      const bucket = trendByKey.get(dayKey(startOfLocalDay(when)));
+      if (bucket) bucket.seconds += seconds;
+    }
+  }
+
+  const topTasks = [...byTask.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const tabBreakdown = [...byTab.entries()].sort((a, b) => b[1] - a[1]);
+
+  return { totalToday, totalWeek, totalMonth, topTasks, tabBreakdown, trend };
+}
+
+function renderMetrics(metrics, fetchedAtIso) {
+  el.statToday.textContent = formatElapsed(metrics.totalToday * 1000);
+  el.statWeek.textContent = formatElapsed(metrics.totalWeek * 1000);
+  el.statMonth.textContent = formatElapsed(metrics.totalMonth * 1000);
+
+  el.topTasksList.innerHTML = '';
+  el.topTasksEmpty.hidden = metrics.topTasks.length > 0;
+  const maxTask = metrics.topTasks[0] ? metrics.topTasks[0][1] : 0;
+  metrics.topTasks.forEach(([task, seconds]) => {
+    el.topTasksList.appendChild(buildBarListItem(task, seconds, maxTask));
+  });
+
+  el.tabBreakdownList.innerHTML = '';
+  el.tabBreakdownEmpty.hidden = metrics.tabBreakdown.length > 0;
+  const maxTab = metrics.tabBreakdown[0] ? metrics.tabBreakdown[0][1] : 0;
+  metrics.tabBreakdown.forEach(([tabName, seconds]) => {
+    el.tabBreakdownList.appendChild(buildBarListItem(tabName, seconds, maxTab));
+  });
+
+  el.trendChart.innerHTML = '';
+  const maxTrend = Math.max(1, ...metrics.trend.map((d) => d.seconds));
+  const todayKey = dayKey(startOfLocalDay(new Date()));
+  metrics.trend.forEach((day) => {
+    el.trendChart.appendChild(buildTrendBar(day, maxTrend, day.key === todayKey));
+  });
+
+  el.metricsUpdated.textContent = `Updated ${new Date(fetchedAtIso).toLocaleString()}`;
+}
+
+function buildBarListItem(label, seconds, max) {
+  const li = document.createElement('li');
+
+  const row = document.createElement('div');
+  row.className = 'metrics-list-row';
+  const name = document.createElement('span');
+  name.className = 'metrics-list-name';
+  name.textContent = label;
+  const value = document.createElement('span');
+  value.className = 'metrics-list-value';
+  value.textContent = formatElapsed(seconds * 1000);
+  row.appendChild(name);
+  row.appendChild(value);
+
+  const track = document.createElement('div');
+  track.className = 'metrics-bar-track';
+  const fill = document.createElement('div');
+  fill.className = 'metrics-bar-fill';
+  fill.style.width = max > 0 ? `${Math.max(4, (seconds / max) * 100)}%` : '0%';
+  track.appendChild(fill);
+
+  li.appendChild(row);
+  li.appendChild(track);
+  return li;
+}
+
+function buildTrendBar(day, max, isToday) {
+  const col = document.createElement('div');
+  col.className = 'trend-bar-col';
+
+  const track = document.createElement('div');
+  track.className = 'trend-bar-track';
+  const bar = document.createElement('div');
+  bar.className = 'trend-bar' + (isToday ? ' today' : '');
+  bar.style.height = day.seconds > 0 ? `${Math.max(2, (day.seconds / max) * 100)}%` : '2px';
+  track.appendChild(bar);
+
+  const label = document.createElement('div');
+  label.className = 'trend-bar-label';
+  label.textContent = day.date.toLocaleDateString(undefined, { weekday: 'narrow' });
+
+  col.appendChild(track);
+  col.appendChild(label);
+  return col;
+}
+
 /* ---------- Actions ---------- */
 
 async function handleSubmit(ev) {
@@ -346,6 +589,15 @@ async function handleSubmit(ev) {
 
 /* ---------- Wiring ---------- */
 
+function switchView(view) {
+  const showMetrics = view === 'metrics';
+  el.viewTracker.hidden = showMetrics;
+  el.viewMetrics.hidden = !showMetrics;
+  el.navTracker.classList.toggle('active', !showMetrics);
+  el.navMetrics.classList.toggle('active', showMetrics);
+  if (showMetrics) loadMetrics(false);
+}
+
 function init() {
   el.webhookInput.value = localStorage.getItem(LS_WEBHOOK) || '';
   el.settingsCard.hidden = !!localStorage.getItem(LS_WEBHOOK);
@@ -363,6 +615,10 @@ function init() {
   setInterval(() => { if (navigator.onLine) flushQueue(); }, 20000);
 
   el.form.addEventListener('submit', handleSubmit);
+
+  el.navTracker.addEventListener('click', () => switchView('tracker'));
+  el.navMetrics.addEventListener('click', () => switchView('metrics'));
+  el.refreshMetrics.addEventListener('click', () => loadMetrics(true));
 
   el.settingsToggle.addEventListener('click', () => {
     el.settingsCard.hidden = !el.settingsCard.hidden;

@@ -311,6 +311,57 @@
     font-size: 11px;
     margin-top: 18px;
   }
+
+  /* View nav */
+  .view-nav {
+    display: flex;
+    gap: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 4px;
+    margin-bottom: 16px;
+  }
+  .view-nav-btn {
+    appearance: none;
+    border: none;
+    flex: 1;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 14px;
+    font-weight: 600;
+    padding: 9px;
+    border-radius: 9px;
+  }
+  .view-nav-btn.active { background: var(--accent); color: white; }
+  #view-tracker, #view-metrics { display: flex; flex-direction: column; gap: 16px; }
+  #view-tracker[hidden], #view-metrics[hidden] { display: none; }
+
+  /* Metrics */
+  .metrics-header-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .metrics-updated { font-size: 12px; color: var(--text-dim); }
+  .metrics-header-row .btn-secondary { width: auto; padding: 8px 14px; flex-shrink: 0; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .stat-tile { text-align: center; }
+  .stat-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+  .stat-value { font-variant-numeric: tabular-nums; font-size: 17px; font-weight: 700; }
+
+  .metrics-section-title { font-size: 14px; margin: 0 0 12px; color: var(--text-dim); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+
+  .metrics-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  .metrics-list-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; margin-bottom: 6px; }
+  .metrics-list-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .metrics-list-value { font-variant-numeric: tabular-nums; color: var(--text-dim); flex-shrink: 0; }
+  .metrics-bar-track { background: var(--surface-2); border-radius: 999px; height: 6px; overflow: hidden; }
+  .metrics-bar-fill { background: var(--accent); height: 100%; border-radius: 999px; }
+
+  .trend-chart { display: flex; align-items: flex-end; gap: 6px; height: 120px; }
+  .trend-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+  .trend-bar-track { flex: 1; width: 100%; display: flex; align-items: flex-end; }
+  .trend-bar { width: 100%; background: var(--accent); border-radius: 4px 4px 0 0; min-height: 2px; }
+  .trend-bar.today { background: var(--good); }
+  .trend-bar-label { font-size: 9px; color: var(--text-dim); margin-top: 6px; }
 </style>
 </head>
 <body>
@@ -324,7 +375,14 @@
   </div>
 </header>
 
+<nav class="view-nav">
+  <button class="view-nav-btn active" id="nav-tracker" type="button">Tracker</button>
+  <button class="view-nav-btn" id="nav-metrics" type="button">Metrics</button>
+</nav>
+
 <main>
+
+<div id="view-tracker">
 
   <section class="card" id="settings-card" hidden>
     <details class="settings" open>
@@ -385,6 +443,53 @@
     <ul id="log-list"></ul>
     <p class="empty-state" id="log-empty">No activity yet.</p>
   </section>
+
+</div>
+
+<div id="view-metrics" hidden>
+
+  <section class="card">
+    <div class="metrics-header-row">
+      <div class="metrics-updated" id="metrics-updated">Not loaded yet.</div>
+      <button class="btn-secondary" id="refresh-metrics" type="button">Refresh</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="stat-grid">
+      <div class="stat-tile">
+        <div class="stat-label">Today</div>
+        <div class="stat-value" id="stat-today">00:00:00</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">This week</div>
+        <div class="stat-value" id="stat-week">00:00:00</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">This month</div>
+        <div class="stat-value" id="stat-month">00:00:00</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 class="metrics-section-title">Last 14 days</h2>
+    <div class="trend-chart" id="trend-chart"></div>
+  </section>
+
+  <section class="card">
+    <h2 class="metrics-section-title">Top tasks</h2>
+    <ul class="metrics-list" id="top-tasks-list"></ul>
+    <p class="empty-state" id="top-tasks-empty" hidden>No synced data yet.</p>
+  </section>
+
+  <section class="card">
+    <h2 class="metrics-section-title">By tab</h2>
+    <ul class="metrics-list" id="tab-breakdown-list"></ul>
+    <p class="empty-state" id="tab-breakdown-empty" hidden>No synced data yet.</p>
+  </section>
+
+</div>
 
 </main>
 

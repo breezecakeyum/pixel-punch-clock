@@ -21,6 +21,16 @@ a Google Apps Script Web App webhook. No backend hosting, no database, no cost.
   in Stop Time / Duration on the matching "Stop", creating a new sheet tab on
   demand. Each row gets a Date column plus separate Start Time / Stop Time
   columns (clock time only) instead of one combined datetime per column.
+- The **Metrics** view (nav toggle at the top) reads all tabs back via
+  `GET ?action=data` on the same webhook and computes everything —
+  today/week/month totals, top tasks, time per tab, a 14-day trend — in
+  `app.js`. Results are cached in `localStorage` so the view still shows the
+  last-loaded numbers offline, and re-fetches automatically after 30s or on
+  demand via the Refresh button. Metrics reflect what's actually synced to
+  the Sheet (plus a live count of anything still queued locally), not
+  unsynced local entries — so numbers can lag slightly behind reality while
+  offline, by design, rather than risk double-counting once those entries
+  sync.
 
 ## Setup
 
@@ -91,6 +101,14 @@ GitHub Pages subpath — no config changes needed either way.
   the request. Treating "the request didn't throw" as success avoids
   resending (and duplicating rows for) requests that actually succeeded.
   `Code.gs` parses the body as JSON regardless of the declared content type.
+- The Metrics read (`GET ?action=data`) uses JSONP (a `<script src="...">`
+  tag) instead of `fetch()`, for the same underlying reason: it needs to
+  actually read the response, and a `<script>` load is never subject to CORS
+  at all, so it works regardless of what headers Apps Script sends back.
 - Not multi-device sync — each device has its own local queue and settings.
   All devices ultimately write to the same Sheet, but there's no shared
   "currently running task" state across devices.
+- If you already deployed `Code.gs` before the Metrics feature was added,
+  re-paste the updated file into the Apps Script project and create a new
+  deployment (or manage deployments → edit → deploy) so the `/exec` URL
+  picks up the new `doGet` behavior.
