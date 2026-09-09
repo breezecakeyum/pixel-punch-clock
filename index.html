@@ -199,6 +199,74 @@
   }
   .timer-tab[hidden] { display: none; }
 
+  /* Rewards: streak/level/XP, instant feedback on Stop */
+  .rewards-card { position: relative; overflow: hidden; }
+  .rewards-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
+  .streak-flame {
+    display: inline-block;
+    font-family: "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif;
+    transition: transform .15s ease;
+  }
+  .streak-flame.bump { animation: streak-bump .4s ease; }
+  @keyframes streak-bump { 0% { transform: scale(1); } 40% { transform: scale(1.5); } 100% { transform: scale(1); } }
+  .xp-bar-track { background: var(--bg); border: 2px solid var(--border); height: 12px; overflow: hidden; }
+  .xp-bar-fill { background: var(--accent); height: 100%; width: 0%; transition: width .5s cubic-bezier(.2,.9,.3,1.3); }
+  .xp-bar-label { font-family: var(--mono-font); font-size: 14px; color: var(--text-dim); margin-top: 8px; text-align: center; }
+
+  .xp-float {
+    position: absolute;
+    left: 50%;
+    top: -6px;
+    transform: translate(-50%, 0);
+    font-family: var(--pixel-font);
+    font-size: 15px;
+    color: var(--warn);
+    text-shadow: 2px 2px 0 var(--shadow);
+    pointer-events: none;
+    opacity: 0;
+    z-index: 5;
+    animation: xp-float-pop 1.2s cubic-bezier(.2,1.6,.4,1) forwards;
+  }
+  @keyframes xp-float-pop {
+    0% { opacity: 0; transform: translate(-50%, 10px) scale(.4); }
+    25% { opacity: 1; transform: translate(-50%, -6px) scale(1.25); }
+    40% { transform: translate(-50%, -10px) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -40px) scale(1); }
+  }
+
+  .levelup-banner {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(13,13,26,.9);
+    z-index: 10;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .levelup-banner.show { animation: banner-in-out 1.7s ease forwards; }
+  .levelup-banner .txt {
+    font-family: var(--pixel-font);
+    font-size: 18px;
+    color: var(--warn);
+    text-shadow: 3px 3px 0 var(--shadow);
+    text-align: center;
+    line-height: 1.8;
+  }
+  .levelup-banner .txt span { display: block; color: var(--good); font-size: 13px; margin-top: 4px; }
+  @keyframes banner-in-out {
+    0% { opacity: 0; }
+    12% { opacity: 1; }
+    82% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .streak-flame.bump, .xp-float, .levelup-banner.show { animation: none !important; }
+    .xp-bar-fill { transition: none; }
+  }
+
   /* Form */
   .field { margin-bottom: 16px; }
   .field:last-child { margin-bottom: 0; }
@@ -241,6 +309,8 @@
     align-items: center;
     justify-content: center;
   }
+
+  .toggle-btn-wrap { position: relative; }
 
   .btn {
     appearance: none;
@@ -294,6 +364,18 @@
     margin-top: 10px;
     line-height: 1.4;
   }
+  .sound-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--mono-font);
+    font-size: 17px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-top: 14px;
+    cursor: pointer;
+  }
+  .sound-toggle-row input { width: 20px; height: 20px; accent-color: var(--accent); }
 
   /* Activity log */
   .log-header {
@@ -453,12 +535,34 @@
       <button class="btn-secondary" id="save-webhook" type="button">Save URL</button>
       <p class="hint">Deploy the Apps Script in <code>apps-script/Code.gs</code> as a Web App ("Anyone" access), then paste the <code>/exec</code> URL here. It's stored only in this browser's local storage on this device — never in the app's source code, so it's not part of what GitHub Pages serves and isn't visible to anyone else who visits the page.</p>
     </details>
+    <label class="sound-toggle-row">
+      <input type="checkbox" id="sound-toggle" checked />
+      Sound effects
+    </label>
   </section>
 
   <section class="card timer-card">
     <div class="timer-task" id="timer-task">Not tracking</div>
     <div class="timer-display" id="timer-display">00:00:00</div>
     <span class="timer-tab" id="timer-tab" hidden></span>
+  </section>
+
+  <section class="card rewards-card">
+    <div class="levelup-banner" id="levelup-banner">
+      <div class="txt">LEVEL UP!<span id="levelup-sub">LEVEL 2</span></div>
+    </div>
+    <div class="rewards-grid">
+      <div class="stat-tile">
+        <div class="stat-label">Streak</div>
+        <div class="stat-value"><span class="streak-flame" id="streak-flame">🔥</span> <span id="streak-value">0</span></div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">Level</div>
+        <div class="stat-value" id="level-value">LV 1</div>
+      </div>
+    </div>
+    <div class="xp-bar-track"><div class="xp-bar-fill" id="xp-bar-fill"></div></div>
+    <div class="xp-bar-label" id="xp-bar-label">0 / 100 XP</div>
   </section>
 
   <section class="card">
@@ -480,7 +584,9 @@
           <option value="Personal"></option>
         </datalist>
       </div>
-      <button class="btn" id="toggle-btn" type="submit">Start</button>
+      <div class="toggle-btn-wrap">
+        <button class="btn" id="toggle-btn" type="submit">Start</button>
+      </div>
     </form>
   </section>
 

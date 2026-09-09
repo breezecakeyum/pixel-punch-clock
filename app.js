@@ -7,6 +7,8 @@ const LS_ACTIVE = 'tt_active_task';
 const LS_LOG = 'tt_log';
 const LS_RECENT_TASKS = 'tt_recent_tasks';
 const LS_METRICS_CACHE = 'tt_metrics_cache';
+const LS_REWARDS = 'tt_rewards';
+const LS_SOUND = 'tt_sound_enabled';
 const LOG_MAX = 50;
 
 const DB_NAME = 'tt-db';
@@ -167,6 +169,15 @@ const el = {
   descriptionInput: document.getElementById('description-input'),
   tabInput: document.getElementById('tab-input'),
   toggleBtn: document.getElementById('toggle-btn'),
+  toggleBtnWrap: document.querySelector('.toggle-btn-wrap'),
+  streakFlame: document.getElementById('streak-flame'),
+  streakValue: document.getElementById('streak-value'),
+  levelValue: document.getElementById('level-value'),
+  xpBarFill: document.getElementById('xp-bar-fill'),
+  xpBarLabel: document.getElementById('xp-bar-label'),
+  levelupBanner: document.getElementById('levelup-banner'),
+  levelupSub: document.getElementById('levelup-sub'),
+  soundToggle: document.getElementById('sound-toggle'),
   installBtn: document.getElementById('install-btn'),
   retrySync: document.getElementById('retry-sync'),
   clearLog: document.getElementById('clear-log'),
@@ -549,6 +560,129 @@ function buildTrendBar(day, max, isToday) {
   return col;
 }
 
+/* ---------- Rewards: streak / XP / level, instant feedback on Stop ---------- */
+/* Fires the moment a session is Stopped, independent of sync — the whole
+   point is a dopamine hit that doesn't wait on a network round-trip. */
+
+function readRewards() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LS_REWARDS) || 'null');
+    if (raw && typeof raw.totalXp === 'number') return raw;
+  } catch {}
+  return { totalXp: 0, streakCount: 0, lastStreakDate: null };
+}
+function writeRewards(rewards) {
+  localStorage.setItem(LS_REWARDS, JSON.stringify(rewards));
+}
+
+function localDateKey(d) {
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function xpForLevel(level) {
+  // Each level takes ~25% more XP than the last, so progress stays
+  // meaningful without ever fully "completing" the game.
+  return Math.round(100 * Math.pow(1.25, level - 1));
+}
+function computeLevelState(totalXp) {
+  let level = 1;
+  let remaining = totalXp;
+  let needed = xpForLevel(level);
+  while (remaining >= needed) {
+    remaining -= needed;
+    level += 1;
+    needed = xpForLevel(level);
+  }
+  return { level, xpIntoLevel: remaining, xpNeeded: needed };
+}
+
+function renderRewards() {
+  const rewards = readRewards();
+  const { level, xpIntoLevel, xpNeeded } = computeLevelState(rewards.totalXp);
+  el.streakValue.textContent = rewards.streakCount;
+  el.levelValue.textContent = `LV ${level}`;
+  el.xpBarFill.style.width = `${Math.min(100, (xpIntoLevel / xpNeeded) * 100)}%`;
+  el.xpBarLabel.textContent = `${xpIntoLevel} / ${xpNeeded} XP`;
+}
+
+function soundEnabled() {
+  return localStorage.getItem(LS_SOUND) !== 'false';
+}
+
+let audioCtx = null;
+function tone(freq, start, dur, peak = 0.12) {
+  if (!soundEnabled()) return;
+  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'square';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0, audioCtx.currentTime + start);
+  gain.gain.linearRampToValueAtTime(peak, audioCtx.currentTime + start + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + start + dur);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(audioCtx.currentTime + start);
+  osc.stop(audioCtx.currentTime + start + dur + 0.02);
+}
+function playRewardSound(leveledUp) {
+  tone(660, 0, 0.09);
+  tone(880, 0.08, 0.12);
+  if (leveledUp) {
+    tone(660, 0.25, 0.08);
+    tone(880, 0.33, 0.08);
+    tone(1175, 0.41, 0.16);
+  }
+}
+
+function showXpFloat(amount) {
+  const span = document.createElement('span');
+  span.className = 'xp-float';
+  span.textContent = `+${amount} XP`;
+  // Appended to the wrapper around #toggle-btn, not the button itself:
+  // renderTimer() sets the button's textContent on every tick (and right
+  // after this runs), which would silently wipe a child node appended
+  // directly to the button.
+  el.toggleBtnWrap.appendChild(span);
+  setTimeout(() => span.remove(), 1300);
+}
+
+function bumpStreakFlame() {
+  el.streakFlame.classList.remove('bump');
+  void el.streakFlame.offsetWidth; // restart the animation
+  el.streakFlame.classList.add('bump');
+}
+
+function showLevelUp(level) {
+  el.levelupSub.textContent = `LEVEL ${level}`;
+  el.levelupBanner.classList.remove('show');
+  void el.levelupBanner.offsetWidth;
+  el.levelupBanner.classList.add('show');
+}
+
+function grantReward(durationSeconds) {
+  const rewards = readRewards();
+  const gained = Math.min(100, 5 + Math.floor(durationSeconds / 60));
+
+  const before = computeLevelState(rewards.totalXp).level;
+  rewards.totalXp += gained;
+  const after = computeLevelState(rewards.totalXp).level;
+  const leveledUp = after > before;
+
+  const today = localDateKey(new Date());
+  if (rewards.lastStreakDate !== today) {
+    const yesterday = localDateKey(new Date(Date.now() - 86400000));
+    rewards.streakCount = rewards.lastStreakDate === yesterday ? rewards.streakCount + 1 : 1;
+    rewards.lastStreakDate = today;
+    bumpStreakFlame();
+  }
+
+  writeRewards(rewards);
+  renderRewards();
+  showXpFloat(gained);
+  playRewardSound(leveledUp);
+  if (leveledUp) showLevelUp(after);
+}
+
 /* ---------- Actions ---------- */
 
 async function handleSubmit(ev) {
@@ -572,6 +706,9 @@ async function handleSubmit(ev) {
     const id = await queueAdd(item);
     addLogEntry({ qid: id, ...item, status: 'pending' });
     setActiveTask(null);
+
+    const durationSeconds = (new Date(timestamp).getTime() - new Date(active.startedAt).getTime()) / 1000;
+    grantReward(durationSeconds);
   }
 
   renderTimer();
@@ -600,6 +737,8 @@ function init() {
   renderLog();
   renderPendingBadge();
   renderStatusDot();
+  renderRewards();
+  el.soundToggle.checked = soundEnabled();
 
   setInterval(renderTimer, 1000);
   // Fallback in case the 'online' event doesn't fire reliably on some
@@ -614,6 +753,10 @@ function init() {
 
   el.settingsToggle.addEventListener('click', () => {
     el.settingsCard.hidden = !el.settingsCard.hidden;
+  });
+
+  el.soundToggle.addEventListener('change', () => {
+    localStorage.setItem(LS_SOUND, el.soundToggle.checked ? 'true' : 'false');
   });
 
   el.toggleWebhookVisibility.addEventListener('click', () => {
