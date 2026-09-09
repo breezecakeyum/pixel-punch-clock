@@ -18,8 +18,9 @@ a Google Apps Script Web App webhook. No backend hosting, no database, no cost.
   loads offline. It deliberately ignores POST requests and cross-origin
   requests so it never interferes with the sync queue.
 - `apps-script/Code.gs` is the webhook: it appends a row on "Start" and fills
-  in End Time / Duration on the matching "Stop", creating a new sheet tab on
-  demand.
+  in Stop Time / Duration on the matching "Stop", creating a new sheet tab on
+  demand. Each row gets a Date column plus separate Start Time / Stop Time
+  columns (clock time only) instead of one combined datetime per column.
 
 ## Setup
 
