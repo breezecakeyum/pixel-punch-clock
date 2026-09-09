@@ -1,7 +1,7 @@
 {
-  "name": "Time Tracker",
-  "short_name": "TimeTrack",
-  "description": "Offline-first time tracker that syncs to Google Sheets",
+  "name": "Pixel Punch Clock",
+  "short_name": "PunchClock",
+  "description": "Offline-first, 8-bit styled time tracker that syncs to Google Sheets",
   "id": "/",
   "start_url": "./index.html",
   "scope": "./",

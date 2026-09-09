@@ -2,7 +2,7 @@
 
 // Bump this on every deploy that changes any app-shell file, so clients
 // pick up the new version instead of serving a stale cached copy forever.
-const CACHE_NAME = 'time-tracker-shell-v4';
+const CACHE_NAME = 'pixel-punch-clock-shell-v1';
 
 const APP_SHELL = [
   './',

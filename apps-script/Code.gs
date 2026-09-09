@@ -1,5 +1,5 @@
 /**
- * Time Tracker webhook backend.
+ * Pixel Punch Clock webhook backend.
  *
  * Setup:
  *   1. Open (or create) the Google Sheet you want to log to.
@@ -57,7 +57,7 @@ function doGet(e) {
   if (params.action === 'data') {
     return respondWithData(params);
   }
-  return ContentService.createTextOutput('Time Tracker API is running.')
+  return ContentService.createTextOutput('Pixel Punch Clock API is running.')
     .setMimeType(ContentService.MimeType.TEXT);
 }
 

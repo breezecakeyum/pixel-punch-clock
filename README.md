@@ -1,7 +1,8 @@
-# Time Tracker
+# Pixel Punch Clock
 
-A 100% free, offline-first PWA time tracker that syncs to a Google Sheet through
-a Google Apps Script Web App webhook. No backend hosting, no database, no cost.
+A 100% free, offline-first, 8-bit styled PWA time tracker that syncs to a
+Google Sheet through a Google Apps Script Web App webhook. No backend
+hosting, no database, no cost.
 
 ## How it works
 
