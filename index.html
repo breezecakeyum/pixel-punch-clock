@@ -115,12 +115,19 @@
     height: 12px;
     background: var(--bad);
     border: 2px solid var(--shadow);
-    box-shadow: 0 0 0 2px var(--bad);
-    transition: background .2s, box-shadow .2s;
+    color: var(--bad); /* drives the glow below via currentColor */
+    animation: led-pulse 1.6s ease-in-out infinite;
   }
   .status-dot.online {
     background: var(--good);
-    box-shadow: 0 0 0 2px var(--good);
+    color: var(--good);
+  }
+  @keyframes led-pulse {
+    0%, 100% { box-shadow: 0 0 0 2px currentColor, 0 0 3px 0 currentColor; }
+    50% { box-shadow: 0 0 0 2px currentColor, 0 0 8px 3px currentColor; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .status-dot { animation: none; box-shadow: 0 0 0 2px currentColor; }
   }
 
   .pending-badge {
@@ -419,6 +426,7 @@
   <div class="status-cluster">
     <span class="pending-badge" id="pending-badge" hidden>0 queued</span>
     <span class="status-dot" id="status-dot" title="Connection status"></span>
+    <button class="icon-btn" id="install-btn" type="button" aria-label="Install app" title="Install app to home screen" hidden>💾</button>
     <button class="icon-btn" id="settings-toggle" type="button" aria-label="Settings">⚙️</button>
   </div>
 </header>
@@ -474,10 +482,6 @@
       </div>
       <button class="btn" id="toggle-btn" type="submit">Start</button>
     </form>
-  </section>
-
-  <section class="card" id="install-card" hidden>
-    <button class="btn-secondary" id="install-btn" type="button">Install app to home screen</button>
   </section>
 
   <section class="card">

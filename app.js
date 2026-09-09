@@ -167,7 +167,6 @@ const el = {
   descriptionInput: document.getElementById('description-input'),
   tabInput: document.getElementById('tab-input'),
   toggleBtn: document.getElementById('toggle-btn'),
-  installCard: document.getElementById('install-card'),
   installBtn: document.getElementById('install-btn'),
   retrySync: document.getElementById('retry-sync'),
   clearLog: document.getElementById('clear-log'),
@@ -663,16 +662,16 @@ function init() {
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredInstallPrompt = e;
-    el.installCard.hidden = false;
+    el.installBtn.hidden = false;
   });
   el.installBtn.addEventListener('click', async () => {
     if (!deferredInstallPrompt) return;
     deferredInstallPrompt.prompt();
     await deferredInstallPrompt.userChoice;
     deferredInstallPrompt = null;
-    el.installCard.hidden = true;
+    el.installBtn.hidden = true;
   });
-  window.addEventListener('appinstalled', () => { el.installCard.hidden = true; });
+  window.addEventListener('appinstalled', () => { el.installBtn.hidden = true; });
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
