@@ -38,16 +38,16 @@ var HEADERS = ['Task', 'Description', 'Date', 'Start Time', 'Stop Time', 'Durati
 var DATE_FORMAT = 'M/d/yyyy';
 var TIME_FORMAT = 'h:mm:ss am/pm';
 var TEXT_FORMAT = '@';
-// One format per HEADERS column. Sheets infers a cell's type from its value
-// (a number-looking string becomes a real number, a time-looking string like
-// "00:00:50" becomes a Date at Sheets' 1899-12-30 epoch) unless the cell's
-// format is already set to something other than "Automatic" *before* the
-// value is written — setting format afterward doesn't undo an already-applied
-// coercion. Task/Description/Duration/Status are forced to plain text so
-// arbitrary user text (e.g. a description that's just "2") and the built
-// HH:MM:SS duration string survive as literal text instead of silently
-// becoming a number or a garbled time-of-day.
-var COLUMN_FORMATS = [TEXT_FORMAT, TEXT_FORMAT, DATE_FORMAT, TIME_FORMAT, TIME_FORMAT, TEXT_FORMAT, TEXT_FORMAT];
+var DURATION_FORMAT = '[h]:mm:ss'; // elapsed-duration display, unlike a 24h-wrapping time-of-day
+// One format per HEADERS column, applied to a new row before any value is
+// written. Sheets infers a cell's type from its value (a number-looking
+// string becomes a real number, a time-looking string becomes a Date) —
+// pre-setting the format to plain text ('@') is the documented defense for
+// that, so it's kept here for Task/Description/Status. Duration doesn't rely
+// on this at all: it's written as a genuine number (see appendFormattedRow/
+// stopMatchingRow), which sidesteps the guessing game entirely since there's
+// no string for Sheets to reinterpret.
+var COLUMN_FORMATS = [TEXT_FORMAT, TEXT_FORMAT, DATE_FORMAT, TIME_FORMAT, TIME_FORMAT, DURATION_FORMAT, TEXT_FORMAT];
 
 function doGet(e) {
   var params = (e && e.parameter) || {};
@@ -83,13 +83,15 @@ function getAllData() {
       var row = values[r];
       if (!row[0]) continue; // skip stray blank rows
       rows.push({
-        task: String(row[0]),
-        description: row[1] ? String(row[1]) : '',
+        task: stripForcedTextMarker(row[0]),
+        description: row[1] ? stripForcedTextMarker(row[1]) : '',
         date: row[2] instanceof Date ? row[2].toISOString() : null,
         startTime: row[3] instanceof Date ? row[3].toISOString() : null,
         stopTime: row[4] instanceof Date ? row[4].toISOString() : null,
-        duration: row[5] ? String(row[5]) : null,
-        status: row[6] ? String(row[6]) : null,
+        // Duration is stored as a day-fraction number (see appendFormattedRow) —
+        // convert back to an "HH:MM:SS" string for the app to parse.
+        duration: typeof row[5] === 'number' ? formatDuration(row[5] * 86400000) : null,
+        status: row[6] ? stripForcedTextMarker(row[6]) : null,
       });
     }
     tabs[sheet.getName()] = rows;
@@ -152,13 +154,15 @@ function stopMatchingRow(sheet, task, description, stopTime) {
       var startTime = new Date(row[3]); // Start Time cell holds the full timestamp
       var durationMs = stopTime.getTime() - startTime.getTime();
       var rowIndex = r + 1; // 1-based, header already accounted for
-      // These cells' format was already set to TIME_FORMAT/TEXT_FORMAT back
-      // when the row was created (appendFormattedRow, called from
-      // appendStartRow), so writing the value here doesn't trigger the
-      // auto-coercion described above — format-before-value already happened.
-      sheet.getRange(rowIndex, 5).setValue(stopTime); // Stop Time
-      sheet.getRange(rowIndex, 6).setValue(formatDuration(durationMs)); // Duration
-      sheet.getRange(rowIndex, 7).setValue('Complete'); // Status
+      sheet.getRange(rowIndex, 5).setValue(stopTime); // Stop Time — a real Date, no ambiguity
+      // Duration as a genuine number (fraction of a day, Sheets' own unit
+      // for time values) — not a string, so there's nothing for Sheets to
+      // "guess" the type of. Pre-setting the cell's number format to
+      // plain text before writing turned out NOT to reliably stop Sheets
+      // from reinterpreting an "HH:MM:SS"-shaped string as a real time
+      // value; a genuine number sidesteps the whole question.
+      sheet.getRange(rowIndex, 6).setValue(durationMs / 86400000);
+      sheet.getRange(rowIndex, 7).setValue(forceText('Complete')); // Status
       return;
     }
   }
@@ -168,14 +172,34 @@ function stopMatchingRow(sheet, task, description, stopTime) {
 }
 
 // Appends a row with each column's format set *before* its value is
-// written, so Sheets' automatic type-detection never gets a chance to
-// coerce a plain-text value into a number or date/time.
+// written (for Date/Start/Stop Time and Duration, whose values are already
+// unambiguous Dates/numbers), and forces Task/Description/Status to literal
+// text via Sheets' documented leading-apostrophe convention — the same
+// thing a user gets by typing `'2` instead of `2` — since that's reliable
+// regardless of the cell's format, unlike setting the format alone.
 function appendFormattedRow(sheet, values) {
   var rowIndex = sheet.getLastRow() + 1;
+  var formats = COLUMN_FORMATS.slice(0, values.length);
   var range = sheet.getRange(rowIndex, 1, 1, values.length);
-  range.setNumberFormats([COLUMN_FORMATS.slice(0, values.length)]);
-  range.setValues([values]);
+  range.setNumberFormats([formats]);
+  var prepared = values.map(function (v, i) {
+    return (formats[i] === TEXT_FORMAT && typeof v === 'string' && v !== '') ? forceText(v) : v;
+  });
+  range.setValues([prepared]);
   return rowIndex;
+}
+
+function forceText(value) {
+  return "'" + value;
+}
+
+// Defensive: the leading apostrophe is an input-side marker that Sheets is
+// documented to strip before storing/displaying the value, so this should
+// normally be a no-op — kept as a safety net in case a cell ends up holding
+// it literally.
+function stripForcedTextMarker(value) {
+  var str = String(value);
+  return str.charAt(0) === "'" ? str.slice(1) : str;
 }
 
 function formatDuration(ms) {
