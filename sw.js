@@ -2,7 +2,7 @@
 
 // Bump this on every deploy that changes any app-shell file, so clients
 // pick up the new version instead of serving a stale cached copy forever.
-const CACHE_NAME = 'time-tracker-shell-v2';
+const CACHE_NAME = 'time-tracker-shell-v3';
 
 const APP_SHELL = [
   './',
@@ -11,6 +11,8 @@ const APP_SHELL = [
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './fonts/PressStart2P.woff2',
+  './fonts/VT323.woff2',
 ];
 
 self.addEventListener('install', (event) => {

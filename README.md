@@ -67,9 +67,10 @@ alongside the URL in Settings.
 
 ### 3. Generate real icons (optional)
 
-`icons/*.png` are placeholder generated icons. Swap them for your own artwork
-at the same file names/sizes (192x192 and 512x512, plus maskable variants) if
-you want custom branding.
+`icons/*.png` are placeholder generated icons (currently a small pixel-art
+clock, matching the app's retro theme). Swap them for your own artwork at the
+same file names/sizes (192x192 and 512x512, plus maskable variants) if you
+want custom branding.
 
 ### 4. Deploy to GitHub Pages
 
@@ -112,3 +113,9 @@ GitHub Pages subpath — no config changes needed either way.
   re-paste the updated file into the Apps Script project and create a new
   deployment (or manage deployments → edit → deploy) so the `/exec` URL
   picks up the new `doGet` behavior.
+- The retro/NES look uses two self-hosted fonts (`fonts/PressStart2P.woff2`,
+  `fonts/VT323.woff2`) rather than a Google Fonts CDN link, to keep the app
+  fully offline-capable — they're cached by `sw.js` like everything else.
+  Both are open-source (SIL Open Font License) and free to use/redistribute:
+  [Press Start 2P](https://fonts.google.com/specimen/Press+Start+2P) and
+  [VT323](https://fonts.google.com/specimen/VT323).
