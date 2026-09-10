@@ -606,6 +606,72 @@
   .trend-bar { width: 100%; background: var(--accent); min-height: 2px; }
   .trend-bar.today { background: var(--warn); }
   .trend-bar-label { font-family: var(--mono-font); font-size: 13px; color: var(--text-dim); margin-top: 6px; text-transform: uppercase; }
+
+  /* Modals: Menu (settings/sync) and the first-run Tutorial share this shell.
+     z-index sits below the CRT scanline overlay (999) on purpose — the scan
+     lines are decorative and pointer-events:none, so letting them still show
+     over a modal keeps the whole page reading as "one screen". */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(13, 13, 26, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 500;
+  }
+  .modal-overlay[hidden] { display: none; }
+
+  .modal-card {
+    background: var(--surface);
+    border: 3px solid var(--border);
+    box-shadow: 6px 6px 0 var(--shadow);
+    width: 100%;
+    max-width: 440px;
+    max-height: calc(100vh - 32px);
+    display: flex;
+    flex-direction: column;
+  }
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 3px solid var(--border);
+    flex-shrink: 0;
+    gap: 10px;
+  }
+  .modal-header h2 {
+    font-family: var(--pixel-font);
+    font-size: 13px;
+    color: var(--warn);
+    text-shadow: 2px 2px 0 var(--shadow);
+    margin: 0;
+  }
+  .modal-body {
+    padding: 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .modal-section-title {
+    font-family: var(--pixel-font);
+    font-size: 11px;
+    color: var(--accent);
+    margin: 0 0 12px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+
+  /* Tutorial */
+  .tutorial-step-counter { font-family: var(--mono-font); font-size: 14px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 10px; text-align: center; }
+  .tutorial-step-title { font-family: var(--pixel-font); font-size: 14px; color: var(--good); text-shadow: 2px 2px 0 var(--shadow); margin: 0 0 14px; text-align: center; line-height: 1.6; }
+  .tutorial-step-body { font-family: var(--mono-font); font-size: 18px; color: var(--text); line-height: 1.5; text-align: center; margin: 0; }
+  .tutorial-nav { display: flex; gap: 10px; padding: 16px; border-top: 3px solid var(--border); flex-shrink: 0; }
+  .tutorial-nav .btn-secondary, .tutorial-nav .btn { flex: 1; width: auto; }
+  .tutorial-nav #tutorial-back[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -616,7 +682,7 @@
     <span class="pending-badge" id="pending-badge" hidden>0 queued</span>
     <span class="status-dot" id="status-dot" title="Connection status"></span>
     <button class="icon-btn" id="install-btn" type="button" aria-label="Install app" title="Install app to home screen" hidden>💾</button>
-    <button class="icon-btn" id="settings-toggle" type="button" aria-label="Settings">⚙️</button>
+    <button class="icon-btn" id="settings-toggle" type="button" aria-label="Menu">⚙️</button>
   </div>
 </header>
 
@@ -629,25 +695,6 @@
 <main>
 
 <div id="view-tracker">
-
-  <section class="card" id="settings-card" hidden>
-    <details class="settings" open>
-      <summary>Webhook settings</summary>
-      <div class="field">
-        <label for="webhook-url">Google Apps Script Web App URL</label>
-        <div class="input-with-action">
-          <input type="password" id="webhook-url" placeholder="https://script.google.com/macros/s/…/exec" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" />
-          <button type="button" class="input-action-btn" id="toggle-webhook-visibility" aria-label="Show URL">👁</button>
-        </div>
-      </div>
-      <button class="btn-secondary" id="save-webhook" type="button">Save URL</button>
-      <p class="hint">Deploy the Apps Script in <code>apps-script/Code.gs</code> as a Web App ("Anyone" access), then paste the <code>/exec</code> URL here. It's stored only in this browser's local storage on this device — never in the app's source code, so it's not part of what GitHub Pages serves and isn't visible to anyone else who visits the page.</p>
-    </details>
-    <label class="sound-toggle-row">
-      <input type="checkbox" id="sound-toggle" checked />
-      Sound effects
-    </label>
-  </section>
 
   <section class="card timer-card">
     <div class="timer-task" id="timer-task">Not tracking</div>
@@ -801,30 +848,86 @@
     <div class="swatch-row" id="swatches-cape"></div>
   </section>
 
-  <section class="card transfer-card">
-    <h2 class="metrics-section-title">Carry your progress</h2>
-    <p class="hint">Your level, streak, and gear sync automatically through the same Google Sheet your time log uses — open this app on another browser with the same webhook URL saved and it picks up where you left off. If that browser doesn't have the webhook set up yet, generate a save code here instead and paste it into "Load a code" over there.</p>
-    <button class="btn-secondary" id="sync-game-state" type="button">Sync progress now</button>
-    <button class="btn-secondary" id="generate-save-code" type="button">Generate save code</button>
-    <div class="field" id="save-code-field" hidden>
-      <label for="save-code-output">Your save code</label>
-      <div class="input-with-action">
-        <input type="text" id="save-code-output" readonly autocomplete="off" />
-        <button type="button" class="input-action-btn" id="copy-save-code" aria-label="Copy code">📋</button>
-      </div>
-    </div>
-    <div class="field">
-      <label for="load-code-input">Load a code</label>
-      <input type="text" id="load-code-input" placeholder="Paste save code here" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
-    </div>
-    <button class="btn-secondary" id="load-save-code" type="button">Load code</button>
-  </section>
-
 </div>
 
 </main>
 
 <footer>Data queues locally and syncs automatically when you're back online.</footer>
+
+<div class="modal-overlay" id="settings-modal" hidden>
+  <div class="modal-card">
+    <div class="modal-header">
+      <h2>Menu</h2>
+      <button class="icon-btn" id="settings-modal-close" type="button" aria-label="Close menu">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <section>
+        <h3 class="modal-section-title">Webhook</h3>
+        <div class="field">
+          <label for="webhook-url">Google Apps Script Web App URL</label>
+          <div class="input-with-action">
+            <input type="password" id="webhook-url" placeholder="https://script.google.com/macros/s/…/exec" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" />
+            <button type="button" class="input-action-btn" id="toggle-webhook-visibility" aria-label="Show URL">👁</button>
+          </div>
+        </div>
+        <button class="btn-secondary" id="save-webhook" type="button">Save URL</button>
+        <p class="hint">Deploy the Apps Script in <code>apps-script/Code.gs</code> as a Web App ("Anyone" access), then paste the <code>/exec</code> URL here. It's stored only in this browser's local storage on this device — never in the app's source code, so it's not part of what GitHub Pages serves and isn't visible to anyone else who visits the page.</p>
+      </section>
+
+      <section>
+        <h3 class="modal-section-title">Sound</h3>
+        <label class="sound-toggle-row">
+          <input type="checkbox" id="sound-toggle" checked />
+          Sound effects
+        </label>
+      </section>
+
+      <section>
+        <h3 class="modal-section-title">Tutorial</h3>
+        <button class="btn-secondary" id="replay-tutorial" type="button">Replay tutorial</button>
+      </section>
+
+      <section class="transfer-card">
+        <h3 class="modal-section-title">Carry your progress</h3>
+        <p class="hint">Your level, streak, and gear sync automatically through the same Google Sheet your time log uses — open this app on another browser with the same webhook URL saved and it picks up where you left off. If that browser doesn't have the webhook set up yet, generate a save code here instead and paste it into "Load a code" over there.</p>
+        <button class="btn-secondary" id="sync-game-state" type="button">Sync progress now</button>
+        <button class="btn-secondary" id="generate-save-code" type="button">Generate save code</button>
+        <div class="field" id="save-code-field" hidden>
+          <label for="save-code-output">Your save code</label>
+          <div class="input-with-action">
+            <input type="text" id="save-code-output" readonly autocomplete="off" />
+            <button type="button" class="input-action-btn" id="copy-save-code" aria-label="Copy code">📋</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="load-code-input">Load a code</label>
+          <input type="text" id="load-code-input" placeholder="Paste save code here" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+        </div>
+        <button class="btn-secondary" id="load-save-code" type="button">Load code</button>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="tutorial-modal" hidden>
+  <div class="modal-card tutorial-card">
+    <div class="modal-header">
+      <h2>How To Play</h2>
+      <button class="icon-btn" id="tutorial-skip" type="button" aria-label="Skip tutorial">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="tutorial-step-counter" id="tutorial-step-counter">STEP 1 / 7</div>
+      <h3 class="tutorial-step-title" id="tutorial-step-title"></h3>
+      <p class="tutorial-step-body" id="tutorial-step-body"></p>
+    </div>
+    <div class="tutorial-nav">
+      <button class="btn-secondary" id="tutorial-back" type="button">Back</button>
+      <button class="btn" id="tutorial-next" type="button">Next</button>
+    </div>
+  </div>
+</div>
 
 <div id="toast"></div>
 

@@ -160,7 +160,16 @@ const el = {
   statusDot: document.getElementById('status-dot'),
   pendingBadge: document.getElementById('pending-badge'),
   settingsToggle: document.getElementById('settings-toggle'),
-  settingsCard: document.getElementById('settings-card'),
+  settingsModal: document.getElementById('settings-modal'),
+  settingsModalClose: document.getElementById('settings-modal-close'),
+  replayTutorial: document.getElementById('replay-tutorial'),
+  tutorialModal: document.getElementById('tutorial-modal'),
+  tutorialSkip: document.getElementById('tutorial-skip'),
+  tutorialStepCounter: document.getElementById('tutorial-step-counter'),
+  tutorialStepTitle: document.getElementById('tutorial-step-title'),
+  tutorialStepBody: document.getElementById('tutorial-step-body'),
+  tutorialBack: document.getElementById('tutorial-back'),
+  tutorialNext: document.getElementById('tutorial-next'),
   webhookInput: document.getElementById('webhook-url'),
   toggleWebhookVisibility: document.getElementById('toggle-webhook-visibility'),
   saveWebhook: document.getElementById('save-webhook'),
@@ -1695,6 +1704,67 @@ function decodeSaveCode(code) {
   return payload;
 }
 
+/* ---------- Menu modal + first-run tutorial ---------- */
+/* Webhook config, sound, and progress sync/save-code all live in one Menu
+   modal (opened from the header gear icon) instead of being scattered across
+   the Tracker and Character screens. The tutorial is a separate modal that
+   auto-opens once, the first time the app ever loads on a device, and can be
+   replayed from inside the Menu. */
+
+const LS_TUTORIAL_SEEN = 'tt_tutorial_seen';
+
+const TUTORIAL_STEPS = [
+  { title: 'WELCOME!', body: "Pixel Punch Clock is a free, offline time tracker that syncs to your own Google Sheet — and turns every session into a tiny 8-bit adventure." },
+  { title: 'TRACK TIME', body: "Type a task, hit Start. Hit Stop when you're done. Every session queues locally and syncs automatically once you're back online." },
+  { title: 'EARN REWARDS', body: "Every Stop earns XP, builds your streak, and sends your avatar into a quick battle. Fights always end in a win — what varies is whether you find gear." },
+  { title: 'GEAR UP', body: "Switch to the Character tab to equip anything you've found. A complete matching set unlocks a loot-chance bonus and a unique glow." },
+  { title: 'DUNGEONS & EVENTS', body: "Watch the event meter under your XP bar — filling it up triggers a themed Dungeon Raid or Castle Siege with its own exclusive gear." },
+  { title: 'STAY IN SYNC', body: "Your log and your progress both live in your own Google Sheet. Open the Menu to connect it — any device with the same URL saved stays in sync automatically." },
+  { title: "THAT'S IT!", body: 'Tap Finish to jump in. You can replay this tutorial anytime from the Menu.' },
+];
+
+function anyModalOpen() {
+  return !el.settingsModal.hidden || !el.tutorialModal.hidden;
+}
+function updateBodyScrollLock() {
+  document.body.style.overflow = anyModalOpen() ? 'hidden' : '';
+}
+
+function openSettingsModal() {
+  el.settingsModal.hidden = false;
+  updateBodyScrollLock();
+}
+function closeSettingsModal() {
+  el.settingsModal.hidden = true;
+  updateBodyScrollLock();
+}
+
+let tutorialStepIndex = 0;
+
+function renderTutorialStep() {
+  const step = TUTORIAL_STEPS[tutorialStepIndex];
+  el.tutorialStepCounter.textContent = `STEP ${tutorialStepIndex + 1} / ${TUTORIAL_STEPS.length}`;
+  el.tutorialStepTitle.textContent = step.title;
+  el.tutorialStepBody.textContent = step.body;
+  el.tutorialBack.hidden = tutorialStepIndex === 0;
+  el.tutorialNext.textContent = tutorialStepIndex === TUTORIAL_STEPS.length - 1 ? 'Finish' : 'Next';
+}
+
+function openTutorial() {
+  tutorialStepIndex = 0;
+  renderTutorialStep();
+  el.tutorialModal.hidden = false;
+  updateBodyScrollLock();
+}
+function closeTutorial() {
+  el.tutorialModal.hidden = true;
+  updateBodyScrollLock();
+  localStorage.setItem(LS_TUTORIAL_SEEN, 'true');
+  // First-run close with nothing configured yet — hand off straight into the
+  // Menu so setup is the very next thing, not a separate step to go find.
+  if (!localStorage.getItem(LS_WEBHOOK)) openSettingsModal();
+}
+
 /* ---------- Actions ---------- */
 
 async function handleSubmit(ev) {
@@ -1746,7 +1816,6 @@ function switchView(view) {
 
 function init() {
   el.webhookInput.value = localStorage.getItem(LS_WEBHOOK) || '';
-  el.settingsCard.hidden = !!localStorage.getItem(LS_WEBHOOK);
 
   try { renderTaskOptions(JSON.parse(localStorage.getItem(LS_RECENT_TASKS) || '[]')); } catch {}
 
@@ -1773,9 +1842,27 @@ function init() {
   el.navMetrics.addEventListener('click', () => switchView('metrics'));
   el.refreshMetrics.addEventListener('click', () => loadMetrics());
 
-  el.settingsToggle.addEventListener('click', () => {
-    el.settingsCard.hidden = !el.settingsCard.hidden;
+  el.settingsToggle.addEventListener('click', openSettingsModal);
+  el.settingsModalClose.addEventListener('click', closeSettingsModal);
+  el.settingsModal.addEventListener('click', (ev) => { if (ev.target === el.settingsModal) closeSettingsModal(); });
+
+  el.replayTutorial.addEventListener('click', () => { closeSettingsModal(); openTutorial(); });
+  el.tutorialSkip.addEventListener('click', closeTutorial);
+  el.tutorialModal.addEventListener('click', (ev) => { if (ev.target === el.tutorialModal) closeTutorial(); });
+  el.tutorialBack.addEventListener('click', () => {
+    if (tutorialStepIndex > 0) { tutorialStepIndex -= 1; renderTutorialStep(); }
   });
+  el.tutorialNext.addEventListener('click', () => {
+    if (tutorialStepIndex < TUTORIAL_STEPS.length - 1) { tutorialStepIndex += 1; renderTutorialStep(); }
+    else closeTutorial();
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Escape') return;
+    if (!el.tutorialModal.hidden) closeTutorial();
+    else if (!el.settingsModal.hidden) closeSettingsModal();
+  });
+
+  if (!localStorage.getItem(LS_TUTORIAL_SEEN)) openTutorial();
 
   el.soundToggle.addEventListener('change', () => {
     localStorage.setItem(LS_SOUND, el.soundToggle.checked ? 'true' : 'false');
