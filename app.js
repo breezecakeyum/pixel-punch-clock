@@ -1197,6 +1197,8 @@ let battle = null;
 
 function startBattle(eventEnvId) {
   if (battle) return;
+  // A real fight always takes priority over ambient flavor.
+  if (activeVignette) { activeVignette = null; el.monsterBanner.classList.remove('show'); }
   const isEvent = !!eventEnvId;
   const monster = isEvent ? pickEventMonster(eventEnvId) : pickMonster();
   if (prefersReducedMotion) {
@@ -1338,7 +1340,7 @@ function paintSpriteOnto(ctx, equippedState, frame, originX, originY, scale) {
 
 const SCENE_W = 360, SCENE_H = 200, GROUND_Y = 150, SPRITE_SCALE = 6, SPRITE_X = 68;
 const SPRITE_H = 16 * SPRITE_SCALE;
-const sceneCtx = el.sceneCanvas.getContext('2d');
+let sceneCtx = el.sceneCanvas.getContext('2d');
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function drawTiled(repeatW, speed, scrollX, drawTile) {
@@ -1346,32 +1348,331 @@ function drawTiled(repeatW, speed, scrollX, drawTile) {
   for (let x = -offset - repeatW; x < SCENE_W + repeatW; x += repeatW) drawTile(x);
 }
 
-// Plains is the avatar's normal home; Dungeon/Castle only appear for the
-// duration of their own event battle (see startBattle), selected by whatever
-// battle.envId currently is.
-function drawPlainsBackground(scrollX) {
+function drawSkyGradient(top, bottom) {
   const ctx = sceneCtx;
   const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
-  sky.addColorStop(0, '#1a1a3e');
-  sky.addColorStop(1, '#2d2d5e');
+  sky.addColorStop(0, top);
+  sky.addColorStop(1, bottom);
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, SCENE_W, SCENE_H);
-
-  ctx.fillStyle = '#3a3a6a';
-  drawTiled(90, 0.15, scrollX, (x) => { ctx.fillRect(x, 24, 28, 8); ctx.fillRect(x + 6, 18, 16, 8); });
-
-  ctx.fillStyle = '#3d2d5e';
-  drawTiled(110, 0.4, scrollX, (x) => {
-    ctx.beginPath();
-    ctx.moveTo(x, GROUND_Y); ctx.lineTo(x + 30, GROUND_Y - 40); ctx.lineTo(x + 70, GROUND_Y);
-    ctx.closePath(); ctx.fill();
-  });
-
-  ctx.fillStyle = '#14142a';
+}
+function drawGroundBase(color) {
+  const ctx = sceneCtx;
+  ctx.fillStyle = color;
   ctx.fillRect(0, GROUND_Y, SCENE_W, SCENE_H - GROUND_Y);
+}
 
-  ctx.fillStyle = '#00e436';
-  drawTiled(18, 1, scrollX, (x) => { ctx.fillRect(x, GROUND_Y - 3, 3, 3); ctx.fillRect(x + 8, GROUND_Y - 5, 3, 5); });
+// Plains is the avatar's normal home — Dungeon/Castle only appear for the
+// duration of their own event battle (see startBattle), selected by whatever
+// battle.envId currently is. While just walking, the background cycles
+// through these palettes on its own (see drawWalkingBackground) — no pose
+// change, no banner, just ambient variety, distinct from the Vignettes below.
+const SCENERY = {
+  dusk: {
+    name: 'Dusk Plains',
+    draw: (scrollX) => {
+      const ctx = sceneCtx;
+      drawSkyGradient('#1a1a3e', '#2d2d5e');
+      ctx.fillStyle = '#3a3a6a';
+      drawTiled(90, 0.15, scrollX, (x) => { ctx.fillRect(x, 24, 28, 8); ctx.fillRect(x + 6, 18, 16, 8); });
+      ctx.fillStyle = '#3d2d5e';
+      drawTiled(110, 0.4, scrollX, (x) => {
+        ctx.beginPath();
+        ctx.moveTo(x, GROUND_Y); ctx.lineTo(x + 30, GROUND_Y - 40); ctx.lineTo(x + 70, GROUND_Y);
+        ctx.closePath(); ctx.fill();
+      });
+      drawGroundBase('#14142a');
+      ctx.fillStyle = '#00e436';
+      drawTiled(18, 1, scrollX, (x) => { ctx.fillRect(x, GROUND_Y - 3, 3, 3); ctx.fillRect(x + 8, GROUND_Y - 5, 3, 5); });
+    }
+  },
+  meadow: {
+    name: 'Sunny Meadow',
+    draw: (scrollX) => {
+      const ctx = sceneCtx;
+      drawSkyGradient('#5ec8f0', '#a6e6ea');
+      ctx.fillStyle = '#f5f5f5';
+      drawTiled(120, 0.15, scrollX, (x) => { ctx.fillRect(x, 20, 26, 7); ctx.fillRect(x + 8, 15, 14, 7); ctx.fillRect(x + 16, 20, 20, 6); });
+      ctx.fillStyle = '#4a8a4a';
+      drawTiled(100, 0.35, scrollX, (x) => {
+        ctx.beginPath();
+        ctx.moveTo(x, GROUND_Y); ctx.lineTo(x + 26, GROUND_Y - 30); ctx.lineTo(x + 60, GROUND_Y);
+        ctx.closePath(); ctx.fill();
+      });
+      drawGroundBase('#2a5a2a');
+      ctx.fillStyle = '#ffd700';
+      drawTiled(46, 1.1, scrollX, (x) => { ctx.fillRect(x, GROUND_Y - 5, 2, 2); });
+      ctx.fillStyle = '#ff8ab0';
+      drawTiled(70, 1.2, scrollX, (x) => { ctx.fillRect(x, GROUND_Y - 5, 2, 2); });
+    }
+  },
+  autumn: {
+    name: 'Autumn Grove',
+    draw: (scrollX) => {
+      const ctx = sceneCtx;
+      drawSkyGradient('#4a2e1e', '#8a5a3a');
+      ctx.fillStyle = '#4a2a14';
+      drawTiled(80, 0.2, scrollX, (x) => { ctx.fillRect(x, 34, 7, 50); });
+      ctx.fillStyle = '#c9642a';
+      drawTiled(80, 0.2, scrollX, (x) => { ctx.fillRect(x - 13, 22, 33, 20); });
+      drawGroundBase('#2a1a12');
+      ctx.fillStyle = '#c9642a';
+      drawTiled(22, 1, scrollX, (x) => { ctx.fillRect(x, GROUND_Y - 3, 3, 3); });
+      ctx.fillStyle = '#e0a030';
+      drawTiled(34, 1.15, scrollX, (x) => { ctx.fillRect(x, GROUND_Y - 5, 3, 3); });
+    }
+  },
+  mist: {
+    name: 'Misty Woods',
+    draw: (scrollX) => {
+      const ctx = sceneCtx;
+      drawSkyGradient('#3a4038', '#5a655c');
+      ctx.fillStyle = '#3a453e';
+      drawTiled(50, 0.25, scrollX, (x) => { ctx.fillRect(x, 20, 5, 60); ctx.fillRect(x - 8, 14, 21, 20); });
+      drawGroundBase('#20261f');
+      ctx.fillStyle = 'rgba(200,215,205,0.18)';
+      ctx.fillRect(0, GROUND_Y - 30, SCENE_W, 30);
+      ctx.fillStyle = 'rgba(200,215,205,0.12)';
+      ctx.fillRect(0, GROUND_Y - 55, SCENE_W, 20);
+    }
+  },
+  night: {
+    name: 'Starry Night',
+    draw: (scrollX, t) => {
+      const ctx = sceneCtx;
+      drawSkyGradient('#05050f', '#12122a');
+      ctx.fillStyle = '#20203a';
+      drawTiled(120, 0.3, scrollX, (x) => {
+        ctx.beginPath();
+        ctx.moveTo(x, GROUND_Y); ctx.lineTo(x + 30, GROUND_Y - 36); ctx.lineTo(x + 70, GROUND_Y);
+        ctx.closePath(); ctx.fill();
+      });
+      drawGroundBase('#0a0a16');
+      const blink = (Math.sin((t || 0) * 0.006) + 1) / 2;
+      ctx.fillStyle = `rgba(255,215,110,${(0.4 + blink * 0.5).toFixed(2)})`;
+      drawTiled(64, 1, scrollX, (x) => { ctx.fillRect(x, GROUND_Y - 20, 2, 2); });
+      ctx.fillStyle = '#f5f5f5';
+      drawTiled(34, 0.05, scrollX, (x) => { ctx.fillRect(x, (x * 53) % 80, 2, 2); });
+    }
+  }
+};
+
+// Off-screen buffers used only while a scenery transition is playing: the
+// outgoing and incoming palettes each render in full to their own buffer,
+// then get composited onto the real canvas with a crossfade. Every
+// SCENERY.draw() (and the drawTiled/drawGroundBase helpers it calls) targets
+// whichever canvas the shared sceneCtx variable currently points to, so
+// redirecting it before the call is enough to render off-screen without
+// duplicating any drawing code.
+const fadeCanvasA = document.createElement('canvas');
+fadeCanvasA.width = SCENE_W; fadeCanvasA.height = SCENE_H;
+const fadeCanvasB = document.createElement('canvas');
+fadeCanvasB.width = SCENE_W; fadeCanvasB.height = SCENE_H;
+
+function renderSceneryTo(targetCanvas, key, scrollX, t) {
+  const saved = sceneCtx;
+  sceneCtx = targetCanvas.getContext('2d');
+  SCENERY[key].draw(scrollX, t);
+  sceneCtx = saved;
+}
+
+let currentScenery = 'dusk';
+let sceneryTransition = null; // { from, to, start }
+const SCENERY_TRANSITION_MS = 1800;
+const SCENERY_MIN_MS = 5 * 60000, SCENERY_MAX_MS = 10 * 60000;
+
+function randomRange(min, max) { return min + Math.random() * (max - min); }
+function pickNextScenery() {
+  const keys = Object.keys(SCENERY).filter((k) => k !== currentScenery);
+  return keys[Math.floor(Math.random() * keys.length)];
+}
+
+// A hard cut between two very different palettes (a bright meadow to a
+// starry night, say) reads as broken rather than "time passed" — this
+// crossfades the old and new backgrounds over SCENERY_TRANSITION_MS instead.
+function drawWalkingBackground(scrollX, t) {
+  if (!sceneryTransition) {
+    SCENERY[currentScenery].draw(scrollX, t);
+    return;
+  }
+  if (sceneryTransition.start === null) sceneryTransition.start = t;
+  const progress = Math.min(1, (t - sceneryTransition.start) / SCENERY_TRANSITION_MS);
+
+  renderSceneryTo(fadeCanvasA, sceneryTransition.from, scrollX, t);
+  renderSceneryTo(fadeCanvasB, sceneryTransition.to, scrollX, t);
+  const ctx = sceneCtx;
+  ctx.globalAlpha = 1;
+  ctx.drawImage(fadeCanvasA, 0, 0);
+  ctx.globalAlpha = progress;
+  ctx.drawImage(fadeCanvasB, 0, 0);
+  ctx.globalAlpha = 1;
+
+  if (progress >= 1) {
+    currentScenery = sceneryTransition.to;
+    sceneryTransition = null;
+  }
+}
+
+/* ---------- Vignettes: ambient idle moments, no XP, no loot ---------- */
+/* Fire only while walking — never during a normal fight or a Dungeon/Castle
+   event, and a real battle always cancels one in progress (see startBattle).
+   Purely cosmetic: nothing here is tracked, synced, or affects any roll. */
+
+const VIGNETTE_DURATION_MS = 5500;
+const VIGNETTE_MIN_MS = 60000, VIGNETTE_MAX_MS = 180000;
+
+const VIGNETTES = {
+  town: {
+    label: 'WANDERING THROUGH TOWN...',
+    draw: (scrollX) => {
+      const ctx = sceneCtx;
+      drawSkyGradient('#4a3550', '#7a5a6e');
+      ctx.fillStyle = '#5a4a5a';
+      drawTiled(140, 0.2, scrollX, (x) => {
+        ctx.fillRect(x, 90, 46, 40);
+        ctx.beginPath();
+        ctx.moveTo(x - 6, 90); ctx.lineTo(x + 23, 66); ctx.lineTo(x + 52, 90);
+        ctx.closePath(); ctx.fill();
+      });
+      ctx.fillStyle = '#ffd76a';
+      drawTiled(140, 0.2, scrollX, (x) => { ctx.fillRect(x + 8, 102, 10, 10); ctx.fillRect(x + 28, 102, 10, 10); });
+      ctx.fillStyle = '#3a2a1a';
+      drawTiled(200, 0.25, scrollX, (x) => { ctx.fillRect(x, 96, 4, 34); ctx.fillRect(x - 6, 90, 16, 5); });
+      drawGroundBase('#2a2432');
+      ctx.fillStyle = '#4a4256';
+      drawTiled(26, 1, scrollX, (x) => { ctx.fillRect(x, GROUND_Y + 3, 16, 2); });
+    }
+  },
+  camp: {
+    label: 'SETTING UP CAMP...',
+    draw: (scrollX, t) => {
+      const ctx = sceneCtx;
+      drawSkyGradient('#0d0d1e', '#1c1c38');
+      ctx.fillStyle = '#f5f5f5';
+      drawTiled(60, 0.05, scrollX, (x) => { ctx.fillRect(x, (x * 37) % 60, 2, 2); });
+      ctx.fillStyle = '#3a5a3a';
+      drawTiled(150, 0.3, scrollX, (x) => {
+        ctx.beginPath();
+        ctx.moveTo(x, GROUND_Y); ctx.lineTo(x + 16, GROUND_Y - 26); ctx.lineTo(x + 32, GROUND_Y);
+        ctx.closePath(); ctx.fill();
+      });
+      drawGroundBase('#161428');
+      const fx = SPRITE_X + 118, fy = GROUND_Y - 4;
+      ctx.fillStyle = '#3a2a1a';
+      ctx.fillRect(fx - 8, fy - 2, 16, 3);
+      const flicker = Math.sin(t * 0.02) * 2;
+      ctx.fillStyle = '#ff8a1e';
+      ctx.fillRect(fx - 4, fy - 12 - flicker, 8, 10 + flicker);
+      ctx.fillStyle = '#ffd76a';
+      ctx.fillRect(fx - 2, fy - 8 - flicker, 4, 6);
+      ctx.save();
+      ctx.shadowColor = 'rgba(255,138,30,0.9)';
+      ctx.shadowBlur = 16;
+      ctx.fillStyle = 'rgba(255,138,30,0.35)';
+      ctx.fillRect(fx - 4, fy - 12 - flicker, 8, 10 + flicker);
+      ctx.restore();
+    },
+    // A custom reclined pose (not the standing walk-sprite) — resting on a
+    // bedroll near the fire, head on a pack, instead of "sitting" in a way
+    // that reads as floating.
+    avatar: (t) => {
+      const ctx = sceneCtx;
+      const bob = Math.sin(t * 0.0025) * 1;
+      const bx = SPRITE_X - 4, by = GROUND_Y - 16 + bob;
+
+      ctx.fillStyle = '#3a2a1a';
+      ctx.fillRect(bx, by - 2, 18, 14);
+
+      ctx.fillStyle = '#f0b088';
+      ctx.fillRect(bx + 3, by - 12, 15, 11);
+      ctx.fillStyle = '#a06b35';
+      ctx.fillRect(bx + 1, by - 14, 19, 5);
+
+      ctx.fillStyle = '#8a3a2a';
+      ctx.fillRect(bx + 18, by, 66, 16);
+      ctx.fillStyle = '#c9503a';
+      ctx.fillRect(bx + 18, by, 66, 4);
+      ctx.fillStyle = '#6a2a1e';
+      ctx.fillRect(bx + 18, by + 12, 66, 4);
+    },
+    sitting: true
+  },
+  market: {
+    label: 'BROWSING A MARKET STALL...',
+    draw: (scrollX) => {
+      const ctx = sceneCtx;
+      drawSkyGradient('#2a2a46', '#4a3f5e');
+      ctx.fillStyle = '#8a1a2a';
+      drawTiled(150, 0.2, scrollX, (x) => { ctx.fillRect(x, 60, 60, 8); });
+      ctx.fillStyle = '#c9a54a';
+      drawTiled(150, 0.2, scrollX, (x) => { ctx.fillRect(x, 68, 60, 4); ctx.fillRect(x - 4, 68, 68, 30); });
+      ctx.fillStyle = '#3a2a1a';
+      drawTiled(150, 0.2, scrollX, (x) => { ctx.fillRect(x, 98, 4, 30); ctx.fillRect(x + 56, 98, 4, 30); });
+      ctx.fillStyle = '#ff004d';
+      drawTiled(150, 0.2, scrollX, (x) => { ctx.fillRect(x + 10, 84, 6, 6); });
+      ctx.fillStyle = '#00e436';
+      drawTiled(150, 0.2, scrollX, (x) => { ctx.fillRect(x + 24, 86, 6, 6); });
+      ctx.fillStyle = '#ffd700';
+      drawTiled(150, 0.2, scrollX, (x) => { ctx.fillRect(x + 38, 84, 6, 6); });
+      drawGroundBase('#241f30');
+      ctx.fillStyle = '#3a3348';
+      drawTiled(26, 1, scrollX, (x) => { ctx.fillRect(x, GROUND_Y + 3, 16, 2); });
+    }
+  },
+  pond: {
+    label: 'FISHING BY THE POND...',
+    draw: (scrollX, t) => {
+      const ctx = sceneCtx;
+      drawSkyGradient('#1a1a3e', '#2d2d5e');
+      ctx.fillStyle = '#3a3a6a';
+      drawTiled(90, 0.15, scrollX, (x) => { ctx.fillRect(x, 24, 28, 8); ctx.fillRect(x + 6, 18, 16, 8); });
+      drawGroundBase('#14142a');
+
+      // Pond sits off to the side, clearly separate from where the avatar
+      // stands — not underfoot.
+      const px = SPRITE_X + 110, pw = SCENE_W - px;
+      const wobble = Math.sin(t * 0.004) * 2;
+      ctx.fillStyle = '#1b7dbf';
+      ctx.fillRect(px, GROUND_Y, pw, SCENE_H - GROUND_Y);
+      ctx.fillStyle = '#29adff';
+      for (let i = 0; i < 3; i++) {
+        const ry = GROUND_Y + 5 + i * 10;
+        ctx.fillRect(px + 8 + wobble, ry, 20, 2);
+        ctx.fillRect(px + 38 - wobble, ry + 3, 24, 2);
+      }
+
+      // Rod held at the avatar's side, angled up and out over the gap; the
+      // line drops from the tip down to a bobber on the water.
+      const handX = SPRITE_X + 84, handY = GROUND_Y - 52;
+      const tipX = SPRITE_X + 130, tipY = GROUND_Y - 86;
+      const bobX = px + 16, bobY = GROUND_Y + 3 + wobble;
+      ctx.strokeStyle = '#8a6238';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(handX, handY); ctx.lineTo(tipX, tipY); ctx.stroke();
+      ctx.strokeStyle = '#dcdce8';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(tipX, tipY); ctx.lineTo(bobX, bobY); ctx.stroke();
+      ctx.fillStyle = '#ff004d';
+      ctx.fillRect(bobX - 1, bobY - 1, 3, 3);
+    }
+  }
+};
+
+let activeVignette = null; // { key, start }
+let nextVignetteAt = Date.now() + randomRange(VIGNETTE_MIN_MS, VIGNETTE_MAX_MS);
+let nextSceneryAt = Date.now() + randomRange(SCENERY_MIN_MS, SCENERY_MAX_MS);
+
+function startVignette(t) {
+  const keys = Object.keys(VIGNETTES);
+  const key = keys[Math.floor(Math.random() * keys.length)];
+  activeVignette = { key, start: t };
+  el.monsterBanner.textContent = VIGNETTES[key].label;
+  el.monsterBanner.classList.add('show');
+}
+function endVignette() {
+  activeVignette = null;
+  el.monsterBanner.classList.remove('show');
+  nextVignetteAt = Date.now() + randomRange(VIGNETTE_MIN_MS, VIGNETTE_MAX_MS);
 }
 
 function drawDungeonBackground(scrollX) {
@@ -1424,15 +1725,21 @@ function drawCastleBackground(scrollX) {
   drawTiled(24, 1, scrollX, (x) => { ctx.fillRect(x, GROUND_Y, 12, SCENE_H - GROUND_Y); });
 }
 
-function drawBackground(envId, scrollX) {
+function drawBackground(envId, scrollX, t) {
   if (envId === 'dungeon') return drawDungeonBackground(scrollX);
   if (envId === 'castle') return drawCastleBackground(scrollX);
-  return drawPlainsBackground(scrollX);
+  return drawWalkingBackground(scrollX, t);
 }
 
 function drawScene(scrollX, bobY, t) {
   const ctx = sceneCtx;
-  drawBackground((battle && battle.envId) || null, scrollX);
+  if (battle) {
+    drawBackground(battle.envId, scrollX, t);
+  } else if (activeVignette) {
+    VIGNETTES[activeVignette.key].draw(scrollX, t);
+  } else {
+    drawBackground(null, scrollX, t);
+  }
 
   if (battle) {
     advanceBattle(t);
@@ -1449,8 +1756,13 @@ function drawScene(scrollX, bobY, t) {
     ctx.shadowColor = 'rgba(' + glow.color + ',0.9)';
     ctx.shadowBlur = blur;
   }
-  const walkFrame = battle ? 0 : Math.floor(t / 220) % 2;
-  paintSpriteOnto(ctx, gearState.equipped, walkFrame, SPRITE_X, GROUND_Y - SPRITE_H + bobY, SPRITE_SCALE);
+  const vignetteAvatar = activeVignette && VIGNETTES[activeVignette.key].avatar;
+  if (vignetteAvatar) {
+    vignetteAvatar(t);
+  } else {
+    const walkFrame = battle ? 0 : Math.floor(t / 220) % 2;
+    paintSpriteOnto(ctx, gearState.equipped, walkFrame, SPRITE_X, GROUND_Y - SPRITE_H + bobY, SPRITE_SCALE);
+  }
   ctx.shadowColor = 'transparent';
   ctx.shadowBlur = 0;
   return tierForLevel(currentLevel());
@@ -1461,7 +1773,21 @@ let sceneRafId = null, sceneScrollX = 0, sceneLastT = 0;
 function sceneTick(t) {
   const dt = sceneLastT ? Math.min(48, t - sceneLastT) : 16;
   sceneLastT = t;
-  if (!battle) sceneScrollX += dt * 0.07;
+  const frozen = battle || (activeVignette && VIGNETTES[activeVignette.key].sitting);
+  if (!frozen) sceneScrollX += dt * 0.07;
+
+  if (!battle) {
+    if (activeVignette) {
+      if (t - activeVignette.start >= VIGNETTE_DURATION_MS) endVignette();
+    } else if (Date.now() >= nextVignetteAt) {
+      startVignette(t);
+    }
+    if (!sceneryTransition && Date.now() >= nextSceneryAt) {
+      sceneryTransition = { from: currentScenery, to: pickNextScenery(), start: null };
+      nextSceneryAt = Date.now() + randomRange(SCENERY_MIN_MS, SCENERY_MAX_MS);
+    }
+  }
+
   const bobY = Math.sin(t * 0.006) * 3;
   const tier = drawScene(sceneScrollX, bobY, t);
   updateSceneLabels(tier);
