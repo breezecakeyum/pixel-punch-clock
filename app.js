@@ -1131,6 +1131,45 @@ function pickMonster() {
   return MONSTERS[maxTier];
 }
 
+/* ---------- Skirmish: ambient fighting while a session is actively tracked ---------- */
+/* A translucent, reward-free loop of clashes that plays only while the timer
+   is running — makes "something is happening" visible during real work,
+   distinct from the idle vignettes (which are reserved for between sessions,
+   see sceneTick). Never touches rollLoot()/grantReward(); the only fight that
+   ever grants anything is the real one startBattle() resolves on Stop —
+   which picks up whichever ghost is on screen at that moment, if any. */
+
+const GHOST_MS = { approach: 500, clash: 250, fade: 350 };
+let ghost = null; // { monster, phase, phaseStart, x }
+
+function startGhostCycle(t) {
+  ghost = { monster: pickMonster(), phase: 'approach', phaseStart: t, x: SCENE_W + 24 };
+}
+
+function advanceGhost(t) {
+  const elapsed = t - ghost.phaseStart;
+  if (ghost.phase === 'approach') {
+    const progress = Math.min(1, elapsed / GHOST_MS.approach);
+    ghost.x = (SCENE_W + 24) - progress * (SCENE_W + 24 - (SPRITE_X + 58));
+    if (progress >= 1) { ghost.phase = 'clash'; ghost.phaseStart = t; }
+  } else if (ghost.phase === 'clash') {
+    if (elapsed >= GHOST_MS.clash) { ghost.phase = 'fade'; ghost.phaseStart = t; }
+  } else if (ghost.phase === 'fade') {
+    if (elapsed >= GHOST_MS.fade) { ghost = null; }
+  }
+}
+
+function drawGhost(ctx, t) {
+  let alpha = 0.45;
+  if (ghost.phase === 'fade') alpha *= Math.max(0, 1 - (t - ghost.phaseStart) / GHOST_MS.fade);
+  const shake = ghost.phase === 'clash' ? Math.sin(t * 0.09) * 2 : 0;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(shake, 0);
+  ghost.monster.draw(ctx, ghost.x, GROUND_Y);
+  ctx.restore();
+}
+
 // A complete matching set equipped across all 4 slots — see SET_BONUSES.
 function activeSetBonus() {
   const eq = gearState.equipped;
@@ -1200,17 +1239,27 @@ function startBattle(eventEnvId) {
   // A real fight always takes priority over ambient flavor.
   if (activeVignette) { activeVignette = null; el.monsterBanner.classList.remove('show'); }
   const isEvent = !!eventEnvId;
-  const monster = isEvent ? pickEventMonster(eventEnvId) : pickMonster();
+  // A normal (non-event) fight picks up whatever skirmish ghost is already on
+  // screen instead of starting fresh — "the skirmish becomes real" rather
+  // than a brand-new monster appearing out of nowhere. Events always start
+  // clean; they're meant to read as their own distinct, bigger moment.
+  const usingGhost = !isEvent && ghost && (ghost.phase === 'approach' || ghost.phase === 'clash');
+  const monster = isEvent ? pickEventMonster(eventEnvId) : (usingGhost ? ghost.monster : pickMonster());
+  const startX = usingGhost ? ghost.x : SCENE_W + 24;
+  const startPhase = usingGhost ? 'clash' : 'approach';
+  ghost = null;
   if (prefersReducedMotion) {
     showLootFloat(isEvent ? rollEventLoot(eventEnvId) : rollLoot());
     renderSceneStatic();
     return;
   }
-  battle = { phase: 'approach', phaseStart: null, monster, monsterX: SCENE_W + 24, loot: null, envId: eventEnvId || null };
+  battle = { phase: startPhase, phaseStart: null, monster, monsterX: startX, loot: null, envId: eventEnvId || null };
   const env = isEvent ? ENVIRONMENTS.find((e) => e.id === eventEnvId) : null;
   el.monsterBanner.textContent = isEvent
     ? `${env.eventName.toUpperCase()}! ${monster.name.toUpperCase()} APPEARS!`
-    : 'A WILD ' + monster.name.toUpperCase() + ' APPROACHES!';
+    : usingGhost
+      ? monster.name.toUpperCase() + '!'
+      : 'A WILD ' + monster.name.toUpperCase() + ' APPROACHES!';
   el.monsterBanner.classList.add('show');
 }
 
@@ -1744,6 +1793,9 @@ function drawScene(scrollX, bobY, t) {
   if (battle) {
     advanceBattle(t);
     if (battle) drawBattle(ctx, t);
+  } else if (ghost) {
+    advanceGhost(t);
+    if (ghost) drawGhost(ctx, t);
   }
 
   // A full gear-set bonus glow takes priority over the streak glow when
@@ -1760,7 +1812,7 @@ function drawScene(scrollX, bobY, t) {
   if (vignetteAvatar) {
     vignetteAvatar(t);
   } else {
-    const walkFrame = battle ? 0 : Math.floor(t / 220) % 2;
+    const walkFrame = (battle || ghost) ? 0 : Math.floor(t / 220) % 2;
     paintSpriteOnto(ctx, gearState.equipped, walkFrame, SPRITE_X, GROUND_Y - SPRITE_H + bobY, SPRITE_SCALE);
   }
   ctx.shadowColor = 'transparent';
@@ -1777,15 +1829,25 @@ function sceneTick(t) {
   if (!frozen) sceneScrollX += dt * 0.07;
 
   if (!battle) {
-    if (activeVignette) {
-      if (t - activeVignette.start >= VIGNETTE_DURATION_MS) endVignette();
-    } else if (Date.now() >= nextVignetteAt) {
-      startVignette(t);
+    // Skirmish (while a session is actively tracked) and idle vignettes
+    // (between sessions) are mutually exclusive by design — tracking status
+    // alone decides which one gets to use the foreground.
+    if (getActiveTask()) {
+      if (!ghost) startGhostCycle(t);
+    } else {
+      ghost = null;
+      if (activeVignette) {
+        if (t - activeVignette.start >= VIGNETTE_DURATION_MS) endVignette();
+      } else if (Date.now() >= nextVignetteAt) {
+        startVignette(t);
+      }
     }
     if (!sceneryTransition && Date.now() >= nextSceneryAt) {
       sceneryTransition = { from: currentScenery, to: pickNextScenery(), start: null };
       nextSceneryAt = Date.now() + randomRange(SCENERY_MIN_MS, SCENERY_MAX_MS);
     }
+  } else if (ghost) {
+    ghost = null;
   }
 
   const bobY = Math.sin(t * 0.006) * 3;
@@ -2042,7 +2104,7 @@ const LS_TUTORIAL_SEEN = 'tt_tutorial_seen';
 const TUTORIAL_STEPS = [
   { title: 'WELCOME!', body: "Pixel Punch Clock is a free, offline time tracker that syncs to your own Google Sheet — and turns every session into a tiny 8-bit adventure." },
   { title: 'TRACK TIME', body: "Type a task, hit Start. Hit Stop when you're done. Every session queues locally and syncs automatically once you're back online." },
-  { title: 'EARN REWARDS', body: "Every Stop earns XP, builds your streak, and sends your avatar into a quick battle. Fights always end in a win — what varies is whether you find gear." },
+  { title: 'EARN REWARDS', body: "Your avatar skirmishes the whole time your timer's running, then it becomes the real fight the moment you hit Stop — XP, streak, and a chance at gear. Fights always end in a win; what varies is whether loot drops." },
   { title: 'GEAR UP', body: "Switch to the Character tab to equip anything you've found. A complete matching set unlocks a loot-chance bonus and a unique glow." },
   { title: 'DUNGEONS & EVENTS', body: "Watch the event meter under your XP bar — filling it up triggers a themed Dungeon Raid or Castle Siege with its own exclusive gear." },
   { title: 'STAY IN SYNC', body: "Your log and your progress both live in your own Google Sheet. Open the Menu to connect it — any device with the same URL saved stays in sync automatically." },

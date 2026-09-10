@@ -2,7 +2,7 @@
 
 // Bump this on every deploy that changes any app-shell file, so clients
 // pick up the new version instead of serving a stale cached copy forever.
-const CACHE_NAME = 'pixel-punch-clock-shell-v9';
+const CACHE_NAME = 'pixel-punch-clock-shell-v10';
 
 const APP_SHELL = [
   './',
