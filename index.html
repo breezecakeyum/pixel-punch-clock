@@ -306,6 +306,28 @@
   }
   .monster-banner.show { opacity: 1; }
 
+  /* Always-on label naming whatever the scene is currently doing — walking,
+     skirmishing while a session is tracked, a real fight, a Dungeon/Castle
+     event, or an idle vignette (see updateSceneModeTag() in app.js). */
+  .scene-mode-tag {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    font-family: var(--pixel-font);
+    font-size: 8px;
+    color: var(--text-dim);
+    background: rgba(13,13,26,0.85);
+    border: 2px solid var(--border);
+    padding: 4px 6px;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    pointer-events: none;
+  }
+  .scene-mode-tag.skirmish { color: var(--accent); border-color: var(--accent); }
+  .scene-mode-tag.battle { color: var(--bad); border-color: var(--bad); }
+  .scene-mode-tag.event { color: var(--warn); border-color: var(--warn); }
+  .scene-mode-tag.vignette { color: var(--good); border-color: var(--good); }
+
   .loot-float {
     position: absolute;
     left: 50%;
@@ -724,6 +746,7 @@
     </div>
     <div class="scene-wrap">
       <canvas id="scene-canvas" width="360" height="200"></canvas>
+      <div class="scene-mode-tag" id="scene-mode-tag">WALKING</div>
       <div class="monster-banner" id="monster-banner"></div>
     </div>
     <div class="tier-line">

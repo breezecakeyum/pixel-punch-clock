@@ -195,6 +195,7 @@ const el = {
   tierName: document.getElementById('tier-name'),
   tierDesc: document.getElementById('tier-desc'),
   gearStatus: document.getElementById('gear-status'),
+  sceneModeTag: document.getElementById('scene-mode-tag'),
   eventMeter: document.getElementById('event-meter'),
   eventMeterLabel: document.getElementById('event-meter-label'),
   eventMeterFill: document.getElementById('event-meter-fill'),
@@ -1630,6 +1631,7 @@ const VIGNETTE_MIN_MS = 60000, VIGNETTE_MAX_MS = 180000;
 const VIGNETTES = {
   town: {
     label: 'WANDERING THROUGH TOWN...',
+    tag: 'TOWN',
     draw: (scrollX) => {
       const ctx = sceneCtx;
       drawSkyGradient('#4a3550', '#7a5a6e');
@@ -1651,6 +1653,7 @@ const VIGNETTES = {
   },
   camp: {
     label: 'SETTING UP CAMP...',
+    tag: 'CAMPFIRE',
     draw: (scrollX, t) => {
       const ctx = sceneCtx;
       drawSkyGradient('#0d0d1e', '#1c1c38');
@@ -1705,6 +1708,7 @@ const VIGNETTES = {
   },
   market: {
     label: 'BROWSING A MARKET STALL...',
+    tag: 'MARKET',
     draw: (scrollX) => {
       const ctx = sceneCtx;
       drawSkyGradient('#2a2a46', '#4a3f5e');
@@ -1727,6 +1731,7 @@ const VIGNETTES = {
   },
   pond: {
     label: 'FISHING BY THE POND...',
+    tag: 'FISHING',
     draw: (scrollX, t) => {
       const ctx = sceneCtx;
       drawSkyGradient('#1a1a3e', '#2d2d5e');
@@ -1890,6 +1895,9 @@ function sceneTick(t) {
     // (between sessions) are mutually exclusive by design — tracking status
     // alone decides which one gets to use the foreground.
     if (getActiveTask()) {
+      // A vignette can legitimately still be mid-play (up to ~5.5s) the
+      // moment the user clicks Start on a new task — skirmish always wins.
+      if (activeVignette) endVignette();
       if (!ghost) startGhostCycle(t);
     } else {
       ghost = null;
@@ -1910,6 +1918,7 @@ function sceneTick(t) {
   const bobY = Math.sin(t * 0.006) * 3;
   const tier = drawScene(sceneScrollX, bobY, t);
   updateSceneLabels(tier);
+  updateSceneModeTag();
   sceneRafId = requestAnimationFrame(sceneTick);
 }
 function startSceneLoop() { if (sceneRafId === null && !prefersReducedMotion) { sceneLastT = 0; sceneRafId = requestAnimationFrame(sceneTick); } }
@@ -1918,11 +1927,39 @@ function renderSceneStatic() {
   if (!prefersReducedMotion) return;
   const tier = drawScene(sceneScrollX, 0, performance.now());
   updateSceneLabels(tier);
+  updateSceneModeTag();
 }
 
 function updateSceneLabels(tier) {
   el.tierName.textContent = tier.name;
   el.tierDesc.textContent = tier.desc;
+}
+
+// A persistent tag naming whatever the scene is currently doing, checked in
+// priority order: a real fight (event or normal) always wins, then an idle
+// vignette, then skirmishing (only possible while a task is tracked), then
+// plain walking as the fallback.
+function updateSceneModeTag() {
+  const tag = el.sceneModeTag;
+  tag.classList.remove('skirmish', 'battle', 'event', 'vignette');
+  if (battle) {
+    if (battle.envId) {
+      const env = ENVIRONMENTS.find((e) => e.id === battle.envId);
+      tag.textContent = env.eventName.toUpperCase();
+      tag.classList.add('event');
+    } else {
+      tag.textContent = 'IN BATTLE';
+      tag.classList.add('battle');
+    }
+  } else if (activeVignette) {
+    tag.textContent = VIGNETTES[activeVignette.key].tag;
+    tag.classList.add('vignette');
+  } else if (getActiveTask()) {
+    tag.textContent = 'SKIRMISHING';
+    tag.classList.add('skirmish');
+  } else {
+    tag.textContent = 'WALKING';
+  }
 }
 
 /* ---------- Character screen ---------- */
