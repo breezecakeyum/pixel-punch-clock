@@ -32,6 +32,15 @@
  * <script src="..."> load is never subject to CORS at all. Pass
  * &callback=NAME to get the JSON wrapped as `NAME(...)`; without it, the
  * endpoint just returns plain JSON (e.g. for manual testing in a browser).
+ *
+ * Game progression (level/streak/gear) syncs the same way, through a hidden
+ * "_GameState" tab holding a single overwritten row: POST action=saveState
+ * upserts it, GET ?action=state (also JSONP) reads it back. The app always
+ * sends its full current snapshot and merges whatever it reads back locally
+ * (max XP, union of found gear, latest-wins for streak/equipped) rather than
+ * trusting either side outright — see mergeStatePayloads() in app.js — so
+ * this endpoint doesn't need to do anything smarter than store the last
+ * snapshot it was given.
  */
 
 var HEADERS = ['Task', 'Description', 'Date', 'Start Time', 'Stop Time', 'Duration', 'Status'];
@@ -55,14 +64,16 @@ var COLUMN_FORMATS = [TEXT_FORMAT, TEXT_FORMAT, DATE_FORMAT, TIME_FORMAT, TIME_F
 function doGet(e) {
   var params = (e && e.parameter) || {};
   if (params.action === 'data') {
-    return respondWithData(params);
+    return respondWithJSONP(getAllData(), params);
+  }
+  if (params.action === 'state') {
+    return respondWithJSONP(loadGameState(), params);
   }
   return ContentService.createTextOutput('Pixel Punch Clock API is running.')
     .setMimeType(ContentService.MimeType.TEXT);
 }
 
-function respondWithData(params) {
-  var payload = getAllData();
+function respondWithJSONP(payload, params) {
   // Only safe JS-identifier characters — this string gets embedded directly
   // into the response as executable code, so it must be sanitized.
   var callback = String(params.callback || '').replace(/[^a-zA-Z0-9_]/g, '');
@@ -80,6 +91,7 @@ function getAllData() {
   var tabs = {};
   for (var i = 0; i < sheets.length; i++) {
     var sheet = sheets[i];
+    if (sheet.getName() === GAME_STATE_SHEET_NAME) continue; // not a task-log tab
     var values = sheet.getDataRange().getValues();
     var rows = [];
     for (var r = 1; r < values.length; r++) {
@@ -108,25 +120,30 @@ function doPost(e) {
   var result;
   try {
     var body = JSON.parse(e.postData.contents);
-    var task = String(body.task || '').trim();
-    var description = String(body.description || '').trim();
     var action = String(body.action || '').trim();
-    var tabName = String(body.tab || 'Work').trim() || 'Work';
-    var timestamp = body.timestamp ? new Date(body.timestamp) : new Date();
 
-    if (!task || (action !== 'Start' && action !== 'Stop')) {
-      throw new Error('Request must include "task" and action "Start" or "Stop".');
-    }
-
-    var sheet = getOrCreateSheet(tabName);
-
-    if (action === 'Start') {
-      appendStartRow(sheet, task, description, timestamp);
+    if (action === 'saveState') {
+      result = saveGameState(body);
     } else {
-      stopMatchingRow(sheet, task, description, timestamp);
-    }
+      var task = String(body.task || '').trim();
+      var description = String(body.description || '').trim();
+      var tabName = String(body.tab || 'Work').trim() || 'Work';
+      var timestamp = body.timestamp ? new Date(body.timestamp) : new Date();
 
-    result = { ok: true, action: action, task: task, tab: tabName };
+      if (!task || (action !== 'Start' && action !== 'Stop')) {
+        throw new Error('Request must include "task" and action "Start" or "Stop".');
+      }
+
+      var sheet = getOrCreateSheet(tabName);
+
+      if (action === 'Start') {
+        appendStartRow(sheet, task, description, timestamp);
+      } else {
+        stopMatchingRow(sheet, task, description, timestamp);
+      }
+
+      result = { ok: true, action: action, task: task, tab: tabName };
+    }
   } catch (err) {
     result = { ok: false, error: err.message };
   }
@@ -144,6 +161,62 @@ function getOrCreateSheet(tabName) {
     sheet.setFrozenRows(1);
   }
   return sheet;
+}
+
+/* ---------- Game state (level / streak / gear), one overwritten row ---------- */
+
+var GAME_STATE_SHEET_NAME = '_GameState';
+var GAME_STATE_HEADERS = ['UpdatedAt', 'TotalXp', 'StreakCount', 'LastStreakDate', 'FoundItems', 'Equipped'];
+
+function getOrCreateGameStateSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(GAME_STATE_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(GAME_STATE_SHEET_NAME);
+    sheet.appendRow(GAME_STATE_HEADERS);
+    sheet.setFrozenRows(1);
+    // LastStreakDate/FoundItems/Equipped hold date-shaped or JSON text — force
+    // plain-text format on that row up front so Sheets never reinterprets them
+    // (see the COLUMN_FORMATS comment above for why that matters here).
+    sheet.getRange(2, 4, 1, 3).setNumberFormat(TEXT_FORMAT);
+    try { sheet.hideSheet(); } catch (err) {} // best-effort; fine if it stays visible
+  }
+  return sheet;
+}
+
+function saveGameState(body) {
+  var sheet = getOrCreateGameStateSheet_();
+  var row = [
+    Number(body.updatedAt) || Date.now(),
+    Number(body.xp) || 0,
+    Number(body.sc) || 0,
+    forceText(body.lsd ? String(body.lsd) : ''),
+    forceText(JSON.stringify(body.f || {})),
+    forceText(JSON.stringify(body.e || {})),
+  ];
+  sheet.getRange(2, 1, 1, row.length).setValues([row]);
+  return { ok: true };
+}
+
+function loadGameState() {
+  var sheet = getOrCreateGameStateSheet_();
+  if (sheet.getLastRow() < 2) return { ok: true, state: null };
+  var row = sheet.getRange(2, 1, 1, GAME_STATE_HEADERS.length).getValues()[0];
+  var foundItems = {}, equipped = {};
+  try { foundItems = JSON.parse(stripForcedTextMarker(row[4]) || '{}'); } catch (err) {}
+  try { equipped = JSON.parse(stripForcedTextMarker(row[5]) || '{}'); } catch (err) {}
+  var lsd = row[3] ? stripForcedTextMarker(row[3]) : '';
+  return {
+    ok: true,
+    state: {
+      updatedAt: Number(row[0]) || 0,
+      xp: Number(row[1]) || 0,
+      sc: Number(row[2]) || 0,
+      lsd: lsd || null,
+      f: foundItems,
+      e: equipped,
+    },
+  };
 }
 
 function appendStartRow(sheet, task, description, startTime) {

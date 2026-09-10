@@ -190,6 +190,12 @@ const el = {
   charTierName: document.getElementById('char-tier-name'),
   charStatLevel: document.getElementById('char-stat-level'),
   charStatStreak: document.getElementById('char-stat-streak'),
+  generateSaveCode: document.getElementById('generate-save-code'),
+  saveCodeField: document.getElementById('save-code-field'),
+  saveCodeOutput: document.getElementById('save-code-output'),
+  copySaveCode: document.getElementById('copy-save-code'),
+  loadCodeInput: document.getElementById('load-code-input'),
+  loadSaveCode: document.getElementById('load-save-code'),
   soundToggle: document.getElementById('sound-toggle'),
   installBtn: document.getElementById('install-btn'),
   retrySync: document.getElementById('retry-sync'),
@@ -690,6 +696,8 @@ function grantReward(durationSeconds) {
   }
 
   writeRewards(rewards);
+  touchState(Date.now());
+  pushGameState();
   renderRewards();
   showXpFloat(gained);
   playRewardSound(leveledUp);
@@ -981,6 +989,8 @@ function rollLoot() {
     gearState.foundItems[pick.slot].push(pick.item.id);
     if (!gearState.equipped[pick.slot]) gearState.equipped[pick.slot] = pick.item.id;
     writeGear(gearState);
+    touchState(Date.now());
+    pushGameState();
     return { type: 'gear', slot: pick.slot, item: pick.item };
   }
   return { type: 'xp' };
@@ -1237,12 +1247,170 @@ function renderCharacterScreen() {
       btn.addEventListener('click', () => {
         gearState.equipped[slot] = id;
         writeGear(gearState);
+        touchState(Date.now());
+        pushGameState();
         renderCharacterScreen();
         renderSceneStatic();
       });
       row.appendChild(btn);
     });
   });
+}
+
+/* ---------- Progression sync: the Google Sheet as the source of truth ---------- */
+/* Level/streak/gear push to a hidden "_GameState" tab (via Code.gs) on every
+   change, and pull on load/reconnect — so opening the app on a different
+   browser picks up wherever the other one left off, the same way the task
+   log already does. Never trusted blindly in either direction: every pull is
+   merged with whatever's already local (see mergeStatePayloads), so a stale
+   read can't roll a device backwards. A manual save code covers the gap
+   before a webhook is set up on the new device, or for transferring without
+   a network round-trip at all — it's not encryption, since there's nothing
+   here worth protecting with a secret (no credentials, no task data, just
+   level/streak/gear numbers) and no server to hold a key; a checksum-verified
+   base64 blob does the job that's actually needed: catch a mistyped or
+   truncated paste. */
+
+const LS_STATE_TS = 'tt_state_updated_at';
+const SAVE_CODE_VERSION = 1;
+
+function readStateTs() {
+  return Number(localStorage.getItem(LS_STATE_TS)) || 0;
+}
+function touchState(ts) {
+  localStorage.setItem(LS_STATE_TS, String(ts || Date.now()));
+}
+
+function currentStatePayload() {
+  const rewards = readRewards();
+  return {
+    xp: rewards.totalXp,
+    sc: rewards.streakCount,
+    lsd: rewards.lastStreakDate,
+    f: gearState.foundItems,
+    e: gearState.equipped,
+    updatedAt: readStateTs(),
+  };
+}
+
+// lastStreakDate keys look like "2026-9-9" (localDateKey: unpadded month/day),
+// which doesn't sort correctly as a plain string ("2026-10-1" < "2026-9-9"
+// lexically) — parse back into a real Date for comparison.
+function dateKeyToDate(key) {
+  if (!key) return null;
+  const parts = String(key).split('-').map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return null;
+  return new Date(parts[0], parts[1], parts[2]);
+}
+
+// Combines two state snapshots (local + remote, either order) without ever
+// letting one side regress the other: XP only ever goes up, found gear is a
+// union (once found, always kept), and the streak pair / equipped loadout
+// follow whichever side was actually touched more recently.
+function mergeStatePayloads(a, b) {
+  const newer = (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a;
+
+  const dateA = dateKeyToDate(a.lsd), dateB = dateKeyToDate(b.lsd);
+  let streakSource = a;
+  if (dateB && (!dateA || dateB > dateA)) streakSource = b;
+
+  const foundItems = {};
+  SLOTS.forEach((slot) => {
+    const setA = (a.f && a.f[slot]) || [];
+    const setB = (b.f && b.f[slot]) || [];
+    foundItems[slot] = Array.from(new Set([...setA, ...setB]));
+  });
+
+  return {
+    xp: Math.max(a.xp || 0, b.xp || 0),
+    sc: streakSource.sc || 0,
+    lsd: streakSource.lsd || null,
+    f: foundItems,
+    e: newer.e || {},
+    updatedAt: Math.max(a.updatedAt || 0, b.updatedAt || 0),
+  };
+}
+
+function applyStatePayload(payload) {
+  writeRewards({ totalXp: payload.xp, streakCount: payload.sc, lastStreakDate: payload.lsd || null });
+
+  const foundItems = { sword: [], shield: [], helmet: [], cape: [] };
+  const equipped = { sword: null, shield: null, helmet: null, cape: null };
+  SLOTS.forEach((slot) => {
+    if (Array.isArray(payload.f[slot])) foundItems[slot] = payload.f[slot].filter((id) => !!itemById(slot, id));
+    if (payload.e[slot] && itemById(slot, payload.e[slot])) equipped[slot] = payload.e[slot];
+  });
+  gearState = { foundItems, equipped };
+  writeGear(gearState);
+  touchState(payload.updatedAt || Date.now());
+
+  renderRewards();
+  renderGearStatus();
+  renderCharacterScreen();
+  renderSceneStatic();
+}
+
+/* ---------- Sheet sync: push on change, pull on load/reconnect ---------- */
+
+async function pushGameState() {
+  const webhookUrl = localStorage.getItem(LS_WEBHOOK);
+  if (!webhookUrl || !navigator.onLine) return;
+  try {
+    // Same fire-and-forget no-cors write as the task-log queue (see
+    // flushQueue) — we can't read the response, but that's fine: this always
+    // sends the full current snapshot, so a dropped push just gets superseded
+    // by the next state change instead of losing anything.
+    await fetch(webhookUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'saveState', ...currentStatePayload() }),
+    });
+  } catch {
+    // Offline or the request failed — the next state change (or reconnect)
+    // retries with the current snapshot.
+  }
+}
+
+async function pullGameState() {
+  const webhookUrl = localStorage.getItem(LS_WEBHOOK);
+  if (!webhookUrl || !navigator.onLine) return;
+  try {
+    const res = await fetchJSONP(webhookUrl, { action: 'state' });
+    if (!res || res.ok !== true || !res.state) return;
+    const merged = mergeStatePayloads(currentStatePayload(), res.state);
+    applyStatePayload(merged);
+    pushGameState(); // write the merged result back so both sides converge
+  } catch {
+    // Offline or the request failed — local state stays authoritative until
+    // the next successful pull.
+  }
+}
+
+function saveCodeChecksum(str) {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) hash = ((hash * 33) ^ str.charCodeAt(i)) >>> 0;
+  return hash.toString(36);
+}
+
+function encodeSaveCode() {
+  const payload = { v: SAVE_CODE_VERSION, ...currentStatePayload() };
+  const body = btoa(JSON.stringify(payload));
+  return `PPC1-${body}-${saveCodeChecksum(body)}`;
+}
+
+function decodeSaveCode(code) {
+  const cleaned = code.trim().replace(/\s+/g, '');
+  const match = /^PPC1-([A-Za-z0-9+/=]+)-([a-z0-9]+)$/.exec(cleaned);
+  if (!match) throw new Error("That doesn't look like a save code");
+  const [, body, sum] = match;
+  if (saveCodeChecksum(body) !== sum) throw new Error('Code looks corrupted — check for missing characters');
+  let payload;
+  try { payload = JSON.parse(atob(body)); } catch { throw new Error('Could not read that code'); }
+  if (!payload || typeof payload.xp !== 'number' || typeof payload.sc !== 'number' || !payload.f || !payload.e) {
+    throw new Error('That code is missing required data');
+  }
+  return payload;
 }
 
 /* ---------- Actions ---------- */
@@ -1365,12 +1533,47 @@ function init() {
     toast('Activity cleared');
   });
 
-  window.addEventListener('online', () => { renderStatusDot(); flushQueue(); });
+  el.generateSaveCode.addEventListener('click', () => {
+    el.saveCodeOutput.value = encodeSaveCode();
+    el.saveCodeField.hidden = false;
+    el.saveCodeOutput.select();
+  });
+
+  el.copySaveCode.addEventListener('click', async () => {
+    if (!el.saveCodeOutput.value) return;
+    try {
+      await navigator.clipboard.writeText(el.saveCodeOutput.value);
+      toast('Save code copied');
+    } catch {
+      el.saveCodeOutput.select();
+      toast('Copy failed — code is selected, copy it manually');
+    }
+  });
+
+  el.loadSaveCode.addEventListener('click', () => {
+    const raw = el.loadCodeInput.value;
+    if (!raw.trim()) { toast('Paste a save code first'); return; }
+    let payload;
+    try {
+      payload = decodeSaveCode(raw);
+    } catch (err) {
+      toast(err.message);
+      return;
+    }
+    // Merged, not overwritten — this can only move progress forward (see
+    // mergeStatePayloads), so there's nothing here that needs a confirm().
+    applyStatePayload(mergeStatePayloads(currentStatePayload(), payload));
+    pushGameState();
+    el.loadCodeInput.value = '';
+    toast('Save code loaded');
+  });
+
+  window.addEventListener('online', () => { renderStatusDot(); flushQueue(); pullGameState(); });
   window.addEventListener('offline', renderStatusDot);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       renderTimer();
-      if (navigator.onLine) flushQueue();
+      if (navigator.onLine) { flushQueue(); pullGameState(); }
       startSceneLoop();
     } else {
       stopSceneLoop();
@@ -1399,7 +1602,7 @@ function init() {
     });
   }
 
-  if (navigator.onLine) flushQueue();
+  if (navigator.onLine) { flushQueue(); pullGameState(); }
 }
 
 document.addEventListener('DOMContentLoaded', init);

@@ -361,6 +361,11 @@
   .swatch:active { transform: translate(3px, 3px); box-shadow: none; }
   .swatch-locked { font-family: var(--mono-font); font-size: 14px; color: var(--text-dim); }
 
+  .transfer-card .hint { margin: 8px 0 14px; }
+  .transfer-card .btn-secondary { margin-top: 10px; }
+  .transfer-card .field { margin-top: 16px; }
+  #save-code-output { font-size: 15px; }
+
   /* Form */
   .field { margin-bottom: 16px; }
   .field:last-child { margin-bottom: 0; }
@@ -783,6 +788,24 @@
   <section class="card slot-card">
     <div class="slot-header"><span class="slot-label">Cape</span><span class="slot-equipped" id="equipped-cape">NOTHING EQUIPPED</span></div>
     <div class="swatch-row" id="swatches-cape"></div>
+  </section>
+
+  <section class="card transfer-card">
+    <h2 class="metrics-section-title">Carry your progress</h2>
+    <p class="hint">Your level, streak, and gear sync automatically through the same Google Sheet your time log uses — open this app on another browser with the same webhook URL saved and it picks up where you left off. If that browser doesn't have the webhook set up yet, generate a save code here instead and paste it into "Load a code" over there.</p>
+    <button class="btn-secondary" id="generate-save-code" type="button">Generate save code</button>
+    <div class="field" id="save-code-field" hidden>
+      <label for="save-code-output">Your save code</label>
+      <div class="input-with-action">
+        <input type="text" id="save-code-output" readonly autocomplete="off" />
+        <button type="button" class="input-action-btn" id="copy-save-code" aria-label="Copy code">📋</button>
+      </div>
+    </div>
+    <div class="field">
+      <label for="load-code-input">Load a code</label>
+      <input type="text" id="load-code-input" placeholder="Paste save code here" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+    </div>
+    <button class="btn-secondary" id="load-save-code" type="button">Load code</button>
   </section>
 
 </div>
