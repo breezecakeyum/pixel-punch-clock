@@ -186,6 +186,9 @@ const el = {
   tierName: document.getElementById('tier-name'),
   tierDesc: document.getElementById('tier-desc'),
   gearStatus: document.getElementById('gear-status'),
+  eventMeter: document.getElementById('event-meter'),
+  eventMeterLabel: document.getElementById('event-meter-label'),
+  eventMeterFill: document.getElementById('event-meter-fill'),
   charCanvas: document.getElementById('char-canvas'),
   charTierName: document.getElementById('char-tier-name'),
   charStatLevel: document.getElementById('char-stat-level'),
@@ -697,13 +700,29 @@ function grantReward(durationSeconds) {
   }
 
   writeRewards(rewards);
+
+  // The event meter is independent of leveling — it fills a notch per Stop
+  // once at least one environment is unlocked, and swaps the next battle for
+  // that environment's special event instead of a normal fight when full.
+  const envs = unlockedEnvironments();
+  let eventEnvId = null;
+  if (envs.length > 0) {
+    gearState.eventProgress = (gearState.eventProgress || 0) + 1;
+    if (gearState.eventProgress >= EVENT_METER_TARGET) {
+      gearState.eventProgress = 0;
+      eventEnvId = envs[Math.floor(Math.random() * envs.length)].id;
+    }
+    writeGear(gearState);
+  }
+
   touchState(Date.now());
   pushGameState();
   renderRewards();
+  renderEventMeter();
   showXpFloat(gained);
   playRewardSound(leveledUp);
   if (leveledUp) showLevelUp(after);
-  startBattle();
+  startBattle(eventEnvId);
 }
 
 /* ---------- Gear / monsters / battle scroller ---------- */
@@ -767,25 +786,35 @@ const GEAR_ITEMS = {
     { id: 'iron_sword', name: 'Iron Sword', tier: 2, colors: { blade: '#f0f0f8', blade_D: '#c4c4d4', accent: '#ffd700', accent_D: '#c9a500', grip: '#8a6238', grip_D: '#5c4020' } },
     { id: 'battle_axe', name: 'Battle Axe', tier: 3, colors: { blade: '#c4c4d4', blade_D: '#8a8a9a', accent: '#ffd700', accent_D: '#c9a500', grip: '#3a2810', grip_D: '#241a08' } },
     { id: 'war_hammer', name: 'War Hammer', tier: 5, colors: { blade: '#8a8a9a', blade_D: '#5a5a6a', accent: '#5a5a6a', accent_D: '#3a3a4a', grip: '#5c4020', grip_D: '#3a2810' } },
-    { id: 'ench_blade', name: 'Enchanted Blade', tier: 7, colors: { blade: '#7ce7ff', blade_D: '#29adff', accent: '#ffd700', accent_D: '#c9a500', grip: '#8a6238', grip_D: '#5c4020' } }
+    { id: 'ench_blade', name: 'Enchanted Blade', tier: 7, colors: { blade: '#7ce7ff', blade_D: '#29adff', accent: '#ffd700', accent_D: '#c9a500', grip: '#8a6238', grip_D: '#5c4020' } },
+    // Set-exclusive: never rolled by rollLoot() (see its !item.set filter) —
+    // only dropped by that environment's event battle (see rollEventLoot).
+    { id: 'rusted_cleaver', name: 'Rusted Cleaver', tier: 99, set: 'dungeon_delver', colors: { blade: '#8a9a6a', blade_D: '#5a6a3a', accent: '#4a3a2a', accent_D: '#2a1e18', grip: '#3a2a1a', grip_D: '#241a10' } },
+    { id: 'guards_longsword', name: "Guard's Longsword", tier: 99, set: 'castle_guard', colors: { blade: '#dce4f0', blade_D: '#a8b8d0', accent: '#ffd700', accent_D: '#c9a500', grip: '#2a3a6a', grip_D: '#1a2648' } }
   ],
   shield: [
     { id: 'wood_shield', name: 'Wooden Shield', tier: 1, colors: { body: '#8a6238', body_D: '#5c4020', emblem: '#c4a274', emblem_D: '#8a6238' } },
     { id: 'iron_shield', name: 'Iron Shield', tier: 3, colors: { body: '#c4c4d4', body_D: '#8a8a9a', emblem: '#ffd700', emblem_D: '#c9a500' } },
     { id: 'tower_shield', name: 'Tower Shield', tier: 4, colors: { body: '#5a5a6a', body_D: '#3a3a4a', emblem: '#ffd700', emblem_D: '#c9a500' } },
-    { id: 'dragon_ward', name: "Dragon's Ward", tier: 7, colors: { body: '#ff4d4d', body_D: '#c02020', emblem: '#ffd700', emblem_D: '#c9a500' } }
+    { id: 'dragon_ward', name: "Dragon's Ward", tier: 7, colors: { body: '#ff4d4d', body_D: '#c02020', emblem: '#ffd700', emblem_D: '#c9a500' } },
+    { id: 'cracked_buckler', name: 'Cracked Buckler', tier: 99, set: 'dungeon_delver', colors: { body: '#5a4a3a', body_D: '#3a2e20', emblem: '#8a9a6a', emblem_D: '#5a6a3a' } },
+    { id: 'crest_shield', name: 'Crest Shield', tier: 99, set: 'castle_guard', colors: { body: '#2a3a6a', body_D: '#1a2648', emblem: '#ffd700', emblem_D: '#c9a500' } }
   ],
   helmet: [
     { id: 'leather_cap', name: 'Leather Cap', tier: 2, colors: { main: '#8a6238', main_D: '#5c4020' } },
     { id: 'iron_helm', name: 'Iron Helm', tier: 4, colors: { main: '#dcdce8', main_D: '#a8a8ba' } },
     { id: 'horned_helm', name: 'Horned Helm', tier: 5, colors: { main: '#5a5a6a', main_D: '#3a3a4a' } },
-    { id: 'dragon_crown', name: 'Dragon Crown', tier: 7, colors: { main: '#ffd700', main_D: '#c9a500' } }
+    { id: 'dragon_crown', name: 'Dragon Crown', tier: 7, colors: { main: '#ffd700', main_D: '#c9a500' } },
+    { id: 'lantern_helm', name: "Miner's Lantern Helm", tier: 99, set: 'dungeon_delver', colors: { main: '#7a6a4a', main_D: '#4a3e28' } },
+    { id: 'plumed_helm', name: 'Plumed Helm', tier: 99, set: 'castle_guard', colors: { main: '#8a8a9a', main_D: '#5a5a6a' } }
   ],
   cape: [
     { id: 'torn_cloak', name: 'Torn Cloak', tier: 3, colors: { main: '#8a5a2b', main_D: '#5c3a1a' } },
     { id: 'knight_cape', name: "Knight's Cape", tier: 4, colors: { main: '#29adff', main_D: '#1b7dbf' } },
     { id: 'royal_cape', name: 'Royal Cape', tier: 5, colors: { main: '#b030d0', main_D: '#7a1f8f' } },
-    { id: 'dragon_cape', name: 'Dragon-scale Cape', tier: 7, colors: { main: '#ff4d4d', main_D: '#c02020' } }
+    { id: 'dragon_cape', name: 'Dragon-scale Cape', tier: 7, colors: { main: '#ff4d4d', main_D: '#c02020' } },
+    { id: 'delver_cloak', name: "Tattered Delver's Cloak", tier: 99, set: 'dungeon_delver', colors: { main: '#4a5a3a', main_D: '#2a3a1e' } },
+    { id: 'sentinel_cape', name: "Sentinel's Cape", tier: 99, set: 'castle_guard', colors: { main: '#2a3a6a', main_D: '#1a2648' } }
   ]
 };
 
@@ -926,6 +955,127 @@ const MONSTERS = [
   { tier: 7, name: 'Dragon', draw: drawDragon }
 ];
 
+function drawBat(ctx, x, y) {
+  ctx.fillStyle = '#2a1a3a';
+  ctx.fillRect(x - 20, y - 24, 16, 6);
+  ctx.fillRect(x + 4, y - 24, 16, 6);
+  ctx.fillStyle = '#4a3a5a';
+  ctx.fillRect(x - 5, y - 22, 10, 9);
+  ctx.fillStyle = '#ff004d';
+  ctx.fillRect(x - 3, y - 19, 2, 2);
+  ctx.fillRect(x + 1, y - 19, 2, 2);
+}
+function drawSpider(ctx, x, y) {
+  ctx.fillStyle = '#1a1a22';
+  ctx.fillRect(x - 10, y - 16, 20, 12);
+  ctx.fillRect(x - 5, y - 22, 10, 8);
+  ctx.fillRect(x - 18, y - 15, 8, 2);
+  ctx.fillRect(x - 17, y - 9, 8, 2);
+  ctx.fillRect(x + 10, y - 15, 8, 2);
+  ctx.fillRect(x + 9, y - 9, 8, 2);
+  ctx.fillStyle = '#ff004d';
+  ctx.fillRect(x - 3, y - 20, 2, 2);
+  ctx.fillRect(x + 1, y - 20, 2, 2);
+}
+function drawDungeonZombie(ctx, x, y) {
+  ctx.fillStyle = '#5a7a5a';
+  ctx.fillRect(x - 5, y - 30, 10, 10);
+  ctx.fillRect(x - 9, y - 20, 18, 16);
+  ctx.fillRect(x - 9, y - 4, 6, 4);
+  ctx.fillRect(x + 3, y - 4, 6, 4);
+  ctx.fillStyle = '#0d0d1a';
+  ctx.fillRect(x - 3, y - 26, 2, 3);
+  ctx.fillRect(x + 1, y - 26, 2, 3);
+  ctx.fillStyle = '#3a2a1a';
+  ctx.fillRect(x - 15, y - 18, 6, 14);
+}
+function drawRoyalGuard(ctx, x, y) {
+  ctx.fillStyle = '#2a3a6a';
+  ctx.fillRect(x - 8, y - 34, 16, 12);
+  ctx.fillStyle = '#ffd700';
+  ctx.fillRect(x - 3, y - 40, 6, 8);
+  ctx.fillStyle = '#8a8a9a';
+  ctx.fillRect(x - 12, y - 22, 24, 20);
+  ctx.fillStyle = '#2a3a6a';
+  ctx.fillRect(x - 12, y - 4, 8, 4);
+  ctx.fillRect(x + 4, y - 4, 8, 4);
+  ctx.fillStyle = '#c9a500';
+  ctx.fillRect(x + 13, y - 26, 3, 24);
+}
+function drawDarkKnight(ctx, x, y) {
+  ctx.fillStyle = '#1a1a22';
+  ctx.fillRect(x - 8, y - 34, 16, 12);
+  ctx.fillStyle = '#ff004d';
+  ctx.fillRect(x - 3, y - 30, 2, 3);
+  ctx.fillRect(x + 1, y - 30, 2, 3);
+  ctx.fillStyle = '#2a2a35';
+  ctx.fillRect(x - 14, y - 22, 28, 22);
+  ctx.fillStyle = '#1a1a22';
+  ctx.fillRect(x - 14, y - 4, 8, 4);
+  ctx.fillRect(x + 6, y - 4, 8, 4);
+  ctx.fillStyle = '#5a0a2a';
+  ctx.fillRect(x + 15, y - 26, 4, 24);
+}
+function drawCourtWizard(ctx, x, y) {
+  ctx.fillStyle = '#5a1a8a';
+  ctx.beginPath();
+  ctx.moveTo(x - 8, y - 26); ctx.lineTo(x, y - 42); ctx.lineTo(x + 8, y - 26);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#f0d8b0';
+  ctx.fillRect(x - 4, y - 26, 8, 6);
+  ctx.fillStyle = '#5a1a8a';
+  ctx.fillRect(x - 10, y - 20, 20, 18);
+  ctx.fillStyle = '#ffd700';
+  ctx.fillRect(x - 10, y - 4, 6, 4);
+  ctx.fillRect(x + 4, y - 4, 6, 4);
+  ctx.fillStyle = '#3a3a5a';
+  ctx.fillRect(x - 17, y - 24, 3, 22);
+  ctx.fillStyle = '#7ce7ff';
+  ctx.fillRect(x - 19, y - 28, 7, 6);
+}
+
+const ENVIRONMENT_MONSTERS = {
+  dungeon: [
+    { name: 'Cave Bat', draw: drawBat },
+    { name: 'Giant Spider', draw: drawSpider },
+    { name: 'Dungeon Zombie', draw: drawDungeonZombie },
+  ],
+  castle: [
+    { name: 'Royal Guard', draw: drawRoyalGuard },
+    { name: 'Dark Knight', draw: drawDarkKnight },
+    { name: 'Court Wizard', draw: drawCourtWizard },
+  ],
+};
+
+// Dungeon/Castle aren't places the avatar lives — they only appear for the
+// duration of their own special event battle (see startBattle), triggered by
+// the event meter below, then the scene reverts to the plains. Each has its
+// own 4-piece gear set that never drops from a normal fight (see rollLoot's
+// !item.set filter) — only from that environment's event (see rollEventLoot).
+const ENVIRONMENTS = [
+  { id: 'dungeon', name: 'Dungeon', eventName: 'Dungeon Raid', minLevel: 7, setId: 'dungeon_delver' },
+  { id: 'castle', name: 'Castle', eventName: 'Castle Siege', minLevel: 12, setId: 'castle_guard' },
+];
+
+// A complete matching set (all 4 slots from the same set) boosts loot odds on
+// every future fight and overrides the streak glow with its own color while
+// worn — see activeSetBonus().
+const SET_BONUSES = {
+  dungeon_delver: { name: 'Dungeon Delver', lootBonus: 0.15, glow: { color: '90,180,70', blur: 20, pulse: false } },
+  castle_guard: { name: 'Castle Guard', lootBonus: 0.15, glow: { color: '176,48,208', blur: 22, pulse: false } },
+};
+
+const EVENT_METER_TARGET = 5;
+
+function unlockedEnvironments() {
+  const lvl = currentLevel();
+  return ENVIRONMENTS.filter((e) => lvl >= e.minLevel);
+}
+function pickEventMonster(envId) {
+  const pool = ENVIRONMENT_MONSTERS[envId];
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 function tierForLevel(lvl) {
   let t = TIERS[0];
   for (let i = 0; i < TIERS.length; i++) if (lvl >= TIERS[i].minLevel) t = TIERS[i];
@@ -950,9 +1100,9 @@ function currentStreak() { return readRewards().streakCount; }
 function readGear() {
   try {
     const raw = JSON.parse(localStorage.getItem(LS_GEAR) || 'null');
-    if (raw && raw.foundItems && raw.equipped) return raw;
+    if (raw && raw.foundItems && raw.equipped) return { eventProgress: 0, ...raw };
   } catch {}
-  return { foundItems: { sword: [], shield: [], helmet: [], cape: [] }, equipped: { sword: null, shield: null, helmet: null, cape: null } };
+  return { foundItems: { sword: [], shield: [], helmet: [], cape: [] }, equipped: { sword: null, shield: null, helmet: null, cape: null }, eventProgress: 0 };
 }
 function writeGear(gear) {
   localStorage.setItem(LS_GEAR, JSON.stringify(gear));
@@ -972,20 +1122,35 @@ function pickMonster() {
   return MONSTERS[maxTier];
 }
 
+// A complete matching set equipped across all 4 slots — see SET_BONUSES.
+function activeSetBonus() {
+  const eq = gearState.equipped;
+  if (!eq.sword || !eq.shield || !eq.helmet || !eq.cape) return null;
+  const items = SLOTS.map((slot) => itemById(slot, eq[slot]));
+  if (items.some((it) => !it || !it.set)) return null;
+  const setId = items[0].set;
+  if (!items.every((it) => it.set === setId)) return null;
+  return SET_BONUSES[setId] || null;
+}
+
 function rollLoot() {
   // Eligible items are gated by the player's unlocked level tier, not the
   // specific monster faced this encounter — pickMonster() sometimes picks a
   // weaker monster for flavor/variety, and gating loot to *that* tier meant
   // those fights could never drop anything once its few items were already
-  // found (an empty candidate pool with no chance to roll at all).
+  // found (an empty candidate pool with no chance to roll at all). Set-
+  // exclusive items (item.set) are excluded here entirely — those only come
+  // from an environment's event battle, see rollEventLoot.
   const maxTier = levelTierIndex(currentLevel());
   const candidates = [];
   SLOTS.forEach((slot) => {
     GEAR_ITEMS[slot].forEach((item) => {
-      if (item.tier <= maxTier && gearState.foundItems[slot].indexOf(item.id) === -1) candidates.push({ slot, item });
+      if (!item.set && item.tier <= maxTier && gearState.foundItems[slot].indexOf(item.id) === -1) candidates.push({ slot, item });
     });
   });
-  if (candidates.length > 0 && Math.random() < 0.55) {
+  const bonus = activeSetBonus();
+  const dropChance = 0.55 + (bonus ? bonus.lootBonus : 0);
+  if (candidates.length > 0 && Math.random() < dropChance) {
     const pick = candidates[Math.floor(Math.random() * candidates.length)];
     gearState.foundItems[pick.slot].push(pick.item.id);
     if (!gearState.equipped[pick.slot]) gearState.equipped[pick.slot] = pick.item.id;
@@ -997,19 +1162,44 @@ function rollLoot() {
   return { type: 'xp' };
 }
 
+// Event battles roll against that environment's own exclusive set only —
+// guaranteed to drop something until the whole set is found (a raid you
+// fought your way into should pay off), then falls back to XP-only.
+function rollEventLoot(envId) {
+  const env = ENVIRONMENTS.find((e) => e.id === envId);
+  const candidates = [];
+  SLOTS.forEach((slot) => {
+    GEAR_ITEMS[slot].forEach((item) => {
+      if (item.set === env.setId && gearState.foundItems[slot].indexOf(item.id) === -1) candidates.push({ slot, item });
+    });
+  });
+  if (candidates.length === 0) return { type: 'xp' };
+  const pick = candidates[Math.floor(Math.random() * candidates.length)];
+  gearState.foundItems[pick.slot].push(pick.item.id);
+  if (!gearState.equipped[pick.slot]) gearState.equipped[pick.slot] = pick.item.id;
+  writeGear(gearState);
+  touchState(Date.now());
+  pushGameState();
+  return { type: 'gear', slot: pick.slot, item: pick.item };
+}
+
 const PHASE_MS = { approach: 650, clash: 320, victory: 550, loot: 1300 };
 let battle = null;
 
-function startBattle() {
+function startBattle(eventEnvId) {
   if (battle) return;
-  const monster = pickMonster();
+  const isEvent = !!eventEnvId;
+  const monster = isEvent ? pickEventMonster(eventEnvId) : pickMonster();
   if (prefersReducedMotion) {
-    showLootFloat(rollLoot());
+    showLootFloat(isEvent ? rollEventLoot(eventEnvId) : rollLoot());
     renderSceneStatic();
     return;
   }
-  battle = { phase: 'approach', phaseStart: null, monster, monsterX: SCENE_W + 24, loot: null };
-  el.monsterBanner.textContent = 'A WILD ' + monster.name.toUpperCase() + ' APPROACHES!';
+  battle = { phase: 'approach', phaseStart: null, monster, monsterX: SCENE_W + 24, loot: null, envId: eventEnvId || null };
+  const env = isEvent ? ENVIRONMENTS.find((e) => e.id === eventEnvId) : null;
+  el.monsterBanner.textContent = isEvent
+    ? `${env.eventName.toUpperCase()}! ${monster.name.toUpperCase()} APPEARS!`
+    : 'A WILD ' + monster.name.toUpperCase() + ' APPROACHES!';
   el.monsterBanner.classList.add('show');
 }
 
@@ -1024,7 +1214,7 @@ function advanceBattle(t) {
     if (progress >= 1) nextBattlePhase('clash', t);
   } else if (battle.phase === 'clash') {
     if (elapsed >= PHASE_MS.clash) {
-      battle.loot = rollLoot();
+      battle.loot = battle.envId ? rollEventLoot(battle.envId) : rollLoot();
       el.monsterBanner.classList.remove('show');
       nextBattlePhase('victory', t);
     }
@@ -1066,6 +1256,19 @@ function showLootFloat(loot) {
 function renderGearStatus() {
   const total = SLOTS.reduce((sum, slot) => sum + gearState.foundItems[slot].length, 0);
   el.gearStatus.textContent = total > 0 ? `${total} ITEM${total === 1 ? '' : 'S'} FOUND` : 'NO GEAR FOUND YET';
+}
+
+// Hidden until at least one environment is unlocked (see unlockedEnvironments)
+// — below that level there's nothing to count toward yet.
+function renderEventMeter() {
+  const envs = unlockedEnvironments();
+  if (envs.length === 0) { el.eventMeter.hidden = true; return; }
+  el.eventMeter.hidden = false;
+  const progress = Math.min(EVENT_METER_TARGET, gearState.eventProgress || 0);
+  const remaining = EVENT_METER_TARGET - progress;
+  const label = envs.length === 1 ? envs[0].eventName : 'Next Event';
+  el.eventMeterLabel.textContent = remaining === 0 ? `${label.toUpperCase()} READY!` : `${remaining} MORE TO ${label.toUpperCase()}`;
+  el.eventMeterFill.style.width = `${(progress / EVENT_METER_TARGET) * 100}%`;
 }
 
 /* ---------- Sprite rendering: equipped items resolve their own colors ---------- */
@@ -1134,7 +1337,10 @@ function drawTiled(repeatW, speed, scrollX, drawTile) {
   for (let x = -offset - repeatW; x < SCENE_W + repeatW; x += repeatW) drawTile(x);
 }
 
-function drawScene(scrollX, bobY, t) {
+// Plains is the avatar's normal home; Dungeon/Castle only appear for the
+// duration of their own event battle (see startBattle), selected by whatever
+// battle.envId currently is.
+function drawPlainsBackground(scrollX) {
   const ctx = sceneCtx;
   const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
   sky.addColorStop(0, '#1a1a3e');
@@ -1157,18 +1363,81 @@ function drawScene(scrollX, bobY, t) {
 
   ctx.fillStyle = '#00e436';
   drawTiled(18, 1, scrollX, (x) => { ctx.fillRect(x, GROUND_Y - 3, 3, 3); ctx.fillRect(x + 8, GROUND_Y - 5, 3, 5); });
+}
+
+function drawDungeonBackground(scrollX) {
+  const ctx = sceneCtx;
+  const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+  sky.addColorStop(0, '#0d0d14');
+  sky.addColorStop(1, '#26221e');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, SCENE_W, SCENE_H);
+
+  ctx.fillStyle = '#3a342c';
+  drawTiled(40, 0.2, scrollX, (x) => { ctx.fillRect(x, 10, 34, 14); });
+  ctx.fillStyle = '#2a251f';
+  drawTiled(40, 0.2, scrollX, (x) => { ctx.fillRect(x, 26, 34, 12); });
+
+  ctx.fillStyle = '#ff8a1e';
+  drawTiled(100, 0.4, scrollX, (x) => { ctx.fillRect(x, 30, 4, 8); ctx.fillRect(x - 1, 36, 6, 3); });
+  ctx.fillStyle = '#ffd76a';
+  drawTiled(100, 0.4, scrollX, (x) => { ctx.fillRect(x + 1, 32, 2, 4); });
+
+  ctx.fillStyle = '#1c1914';
+  ctx.fillRect(0, GROUND_Y, SCENE_W, SCENE_H - GROUND_Y);
+  ctx.fillStyle = '#302a22';
+  drawTiled(30, 1, scrollX, (x) => { ctx.fillRect(x, GROUND_Y + 2, 24, 2); });
+}
+
+function drawCastleBackground(scrollX) {
+  const ctx = sceneCtx;
+  const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+  sky.addColorStop(0, '#3a3550');
+  sky.addColorStop(1, '#544d6e');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, SCENE_W, SCENE_H);
+
+  ctx.fillStyle = '#6a6288';
+  drawTiled(90, 0.2, scrollX, (x) => { ctx.fillRect(x, 14, 20, 26); });
+  ctx.fillStyle = '#7ce7ff';
+  drawTiled(90, 0.2, scrollX, (x) => { ctx.fillRect(x + 4, 18, 12, 10); });
+  ctx.fillStyle = '#ffd700';
+  drawTiled(90, 0.2, scrollX, (x) => { ctx.fillRect(x + 4, 30, 12, 6); });
+
+  ctx.fillStyle = '#8a1a2a';
+  drawTiled(140, 0.35, scrollX, (x) => { ctx.fillRect(x, 4, 10, 36); });
+  ctx.fillStyle = '#ffd700';
+  drawTiled(140, 0.35, scrollX, (x) => { ctx.fillRect(x + 3, 10, 4, 4); });
+
+  ctx.fillStyle = '#403a56';
+  ctx.fillRect(0, GROUND_Y, SCENE_W, SCENE_H - GROUND_Y);
+  ctx.fillStyle = '#524a6e';
+  drawTiled(24, 1, scrollX, (x) => { ctx.fillRect(x, GROUND_Y, 12, SCENE_H - GROUND_Y); });
+}
+
+function drawBackground(envId, scrollX) {
+  if (envId === 'dungeon') return drawDungeonBackground(scrollX);
+  if (envId === 'castle') return drawCastleBackground(scrollX);
+  return drawPlainsBackground(scrollX);
+}
+
+function drawScene(scrollX, bobY, t) {
+  const ctx = sceneCtx;
+  drawBackground((battle && battle.envId) || null, scrollX);
 
   if (battle) {
     advanceBattle(t);
     if (battle) drawBattle(ctx, t);
   }
 
-  const streakTier = tierForStreak(currentStreak());
-  if (streakTier && streakTier.glow) {
-    const g = streakTier.glow;
-    let blur = g.blur * 0.55;
-    if (g.pulse) blur += Math.sin(scrollX * 0.05) * (g.blur * 0.2);
-    ctx.shadowColor = 'rgba(' + g.color + ',0.9)';
+  // A full gear-set bonus glow takes priority over the streak glow when
+  // both would apply — it's the rarer, more deliberate achievement.
+  const setBonus = activeSetBonus();
+  const glow = setBonus ? setBonus.glow : tierForStreak(currentStreak()).glow;
+  if (glow) {
+    let blur = glow.blur * 0.55;
+    if (glow.pulse) blur += Math.sin(scrollX * 0.05) * (glow.blur * 0.2);
+    ctx.shadowColor = 'rgba(' + glow.color + ',0.9)';
     ctx.shadowBlur = blur;
   }
   const walkFrame = battle ? 0 : Math.floor(t / 220) % 2;
@@ -1290,6 +1559,7 @@ function currentStatePayload() {
     lsd: rewards.lastStreakDate,
     f: gearState.foundItems,
     e: gearState.equipped,
+    ep: gearState.eventProgress || 0,
     updatedAt: readStateTs(),
   };
 }
@@ -1328,6 +1598,7 @@ function mergeStatePayloads(a, b) {
     lsd: streakSource.lsd || null,
     f: foundItems,
     e: newer.e || {},
+    ep: newer.ep || 0,
     updatedAt: Math.max(a.updatedAt || 0, b.updatedAt || 0),
   };
 }
@@ -1341,12 +1612,13 @@ function applyStatePayload(payload) {
     if (Array.isArray(payload.f[slot])) foundItems[slot] = payload.f[slot].filter((id) => !!itemById(slot, id));
     if (payload.e[slot] && itemById(slot, payload.e[slot])) equipped[slot] = payload.e[slot];
   });
-  gearState = { foundItems, equipped };
+  gearState = { foundItems, equipped, eventProgress: payload.ep || 0 };
   writeGear(gearState);
   touchState(payload.updatedAt || Date.now());
 
   renderRewards();
   renderGearStatus();
+  renderEventMeter();
   renderCharacterScreen();
   renderSceneStatic();
 }
@@ -1485,6 +1757,7 @@ function init() {
   renderRewards();
   el.soundToggle.checked = soundEnabled();
   renderGearStatus();
+  renderEventMeter();
   renderCharacterScreen();
   if (prefersReducedMotion) renderSceneStatic(); else startSceneLoop();
 

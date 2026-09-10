@@ -213,6 +213,13 @@
   .xp-bar-fill { background: var(--accent); height: 100%; width: 0%; transition: width .5s cubic-bezier(.2,.9,.3,1.3); }
   .xp-bar-label { font-family: var(--mono-font); font-size: 14px; color: var(--text-dim); margin-top: 8px; text-align: center; }
 
+  /* Event meter: an independent short-term counter toward a Dungeon Raid /
+     Castle Siege, separate from leveling (see grantReward() in app.js). */
+  .event-meter { margin-top: 12px; }
+  .event-meter-track { background: var(--bg); border: 2px solid var(--border); height: 10px; overflow: hidden; }
+  .event-meter-fill { background: var(--warn); height: 100%; width: 0%; transition: width .5s cubic-bezier(.2,.9,.3,1.3); }
+  .event-meter-label { font-family: var(--mono-font); font-size: 13px; color: var(--warn); margin-top: 6px; text-align: center; text-transform: uppercase; }
+
   .xp-float {
     position: absolute;
     left: 50%;
@@ -664,6 +671,10 @@
     </div>
     <div class="xp-bar-track"><div class="xp-bar-fill" id="xp-bar-fill"></div></div>
     <div class="xp-bar-label" id="xp-bar-label">0 / 100 XP</div>
+    <div class="event-meter" id="event-meter" hidden>
+      <div class="event-meter-track"><div class="event-meter-fill" id="event-meter-fill"></div></div>
+      <div class="event-meter-label" id="event-meter-label">5 MORE TO DUNGEON RAID</div>
+    </div>
     <div class="scene-wrap">
       <canvas id="scene-canvas" width="360" height="200"></canvas>
       <div class="monster-banner" id="monster-banner"></div>

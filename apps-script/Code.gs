@@ -166,7 +166,9 @@ function getOrCreateSheet(tabName) {
 /* ---------- Game state (level / streak / gear), one overwritten row ---------- */
 
 var GAME_STATE_SHEET_NAME = '_GameState';
-var GAME_STATE_HEADERS = ['UpdatedAt', 'TotalXp', 'StreakCount', 'LastStreakDate', 'FoundItems', 'Equipped'];
+// EventProgress appended at the end (not inserted earlier) so a sheet from
+// before this column existed keeps its existing column positions intact.
+var GAME_STATE_HEADERS = ['UpdatedAt', 'TotalXp', 'StreakCount', 'LastStreakDate', 'FoundItems', 'Equipped', 'EventProgress'];
 
 function getOrCreateGameStateSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -193,6 +195,7 @@ function saveGameState(body) {
     forceText(body.lsd ? String(body.lsd) : ''),
     forceText(JSON.stringify(body.f || {})),
     forceText(JSON.stringify(body.e || {})),
+    Number(body.ep) || 0,
   ];
   sheet.getRange(2, 1, 1, row.length).setValues([row]);
   return { ok: true };
@@ -215,6 +218,7 @@ function loadGameState() {
       lsd: lsd || null,
       f: foundItems,
       e: equipped,
+      ep: Number(row[6]) || 0,
     },
   };
 }
