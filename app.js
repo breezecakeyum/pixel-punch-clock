@@ -9,6 +9,7 @@ const LS_RECENT_TASKS = 'tt_recent_tasks';
 const LS_METRICS_CACHE = 'tt_metrics_cache';
 const LS_REWARDS = 'tt_rewards';
 const LS_SOUND = 'tt_sound_enabled';
+const LS_GEAR = 'tt_gear';
 const LOG_MAX = 50;
 
 const DB_NAME = 'tt-db';
@@ -151,8 +152,10 @@ function setActiveTask(task) {
 
 const el = {
   navTracker: document.getElementById('nav-tracker'),
+  navCharacter: document.getElementById('nav-character'),
   navMetrics: document.getElementById('nav-metrics'),
   viewTracker: document.getElementById('view-tracker'),
+  viewCharacter: document.getElementById('view-character'),
   viewMetrics: document.getElementById('view-metrics'),
   statusDot: document.getElementById('status-dot'),
   pendingBadge: document.getElementById('pending-badge'),
@@ -177,6 +180,16 @@ const el = {
   xpBarLabel: document.getElementById('xp-bar-label'),
   levelupBanner: document.getElementById('levelup-banner'),
   levelupSub: document.getElementById('levelup-sub'),
+  sceneWrap: document.querySelector('.scene-wrap'),
+  sceneCanvas: document.getElementById('scene-canvas'),
+  monsterBanner: document.getElementById('monster-banner'),
+  tierName: document.getElementById('tier-name'),
+  tierDesc: document.getElementById('tier-desc'),
+  gearStatus: document.getElementById('gear-status'),
+  charCanvas: document.getElementById('char-canvas'),
+  charTierName: document.getElementById('char-tier-name'),
+  charStatLevel: document.getElementById('char-stat-level'),
+  charStatStreak: document.getElementById('char-stat-streak'),
   soundToggle: document.getElementById('sound-toggle'),
   installBtn: document.getElementById('install-btn'),
   retrySync: document.getElementById('retry-sync'),
@@ -681,6 +694,555 @@ function grantReward(durationSeconds) {
   showXpFloat(gained);
   playRewardSound(leveledUp);
   if (leveledUp) showLevelUp(after);
+  startBattle();
+}
+
+/* ---------- Gear / monsters / battle scroller ---------- */
+/* An 8-bit avatar that walks endlessly in the rewards card and fights a
+   monster the instant a session is Stopped (see startBattle(), called from
+   grantReward() below) — never on a timer, so the payoff stays tied to the
+   behavior it's meant to reinforce. Fights always end in a win; what varies
+   is whether a piece of gear drops. */
+
+const SLOTS = ['sword', 'shield', 'helmet', 'cape'];
+
+// Body colors are fixed (not customizable) — only equipment varies.
+const BODY_COLORS = {
+  H: '#a06b35', H_D: '#6b4520',
+  S: '#f0b088', S_D: '#d4926a',
+  T: '#29adff', T_D: '#1b7dbf',
+  P: '#3a3a5a', P_D: '#22223a',
+  B: '#1a1a22', B_D: '#0a0a10'
+};
+
+const BASE = [
+  '......HH......',
+  '.....HHHH.....',
+  '.....SSSS.....',
+  '.....SSSS.....',
+  '......SS......',
+  '.....TTTT.....',
+  '...TTTTTTTT...',
+  '...TTTTTTTT...',
+  '...TTTTTTTT...',
+  '.....TTTT.....'
+];
+const LEGS = [
+  ['.....PPPP.....', '.....PPPP.....', '.....PP.PP....', '.....PP.PP....', '....BB..BB....', '....BB..BB....'],
+  ['.....PPPP.....', '.....PPPP.....', '....PP...PP...', '....PP...PP...', '...BB....BB...', '...BB....BB...']
+];
+const ARM_SWING = [{ 9: [[3, 'T']] }, { 9: [[10, 'T']] }];
+
+// Gear shapes: fixed position + role name per slot. Color comes from whichever
+// item is equipped, so the same shape can be a Wooden Sword or an Enchanted
+// Blade just by which colors get plugged into "blade".
+const SWORD_SHAPE = { 3: [[11, 'blade']], 4: [[11, 'blade']], 5: [[11, 'blade']], 6: [[11, 'blade'], [12, 'accent']], 7: [[11, 'grip']], 8: [[11, 'grip']] };
+const SHIELD_SHAPE = { 6: [[1, 'body'], [2, 'body']], 7: [[1, 'body'], [2, 'emblem']], 8: [[1, 'body'], [2, 'body']], 9: [[1, 'body'], [2, 'body']] };
+const HELMET_SHAPE_ROWS = { 0: '......MM......', 1: '....MMMMMM....' };
+const CAPE_SHAPE = {
+  5: [[2, 'main'], [3, 'main'], [10, 'main'], [11, 'main']],
+  6: [[1, 'main'], [2, 'main'], [11, 'main'], [12, 'main']],
+  7: [[1, 'main'], [2, 'main'], [11, 'main'], [12, 'main']],
+  8: [[1, 'main'], [2, 'main'], [11, 'main'], [12, 'main']],
+  9: [[2, 'main'], [3, 'main'], [10, 'main'], [11, 'main']],
+  10: [[3, 'main'], [4, 'main'], [9, 'main'], [10, 'main']],
+  11: [[4, 'main'], [5, 'main'], [8, 'main'], [9, 'main']]
+};
+
+// Each slot's item catalog. "tier" is the minimum unlocked level-tier index
+// it can drop from (see levelTierIndex). Colors list the primary role first —
+// that's what a swatch samples to represent the item with a single chip.
+const GEAR_ITEMS = {
+  sword: [
+    { id: 'wood_sword', name: 'Wooden Sword', tier: 0, colors: { blade: '#c4a274', blade_D: '#8a6238', accent: '#8a6238', accent_D: '#5c4020', grip: '#5c4020', grip_D: '#3a2810' } },
+    { id: 'iron_sword', name: 'Iron Sword', tier: 2, colors: { blade: '#f0f0f8', blade_D: '#c4c4d4', accent: '#ffd700', accent_D: '#c9a500', grip: '#8a6238', grip_D: '#5c4020' } },
+    { id: 'battle_axe', name: 'Battle Axe', tier: 3, colors: { blade: '#c4c4d4', blade_D: '#8a8a9a', accent: '#ffd700', accent_D: '#c9a500', grip: '#3a2810', grip_D: '#241a08' } },
+    { id: 'war_hammer', name: 'War Hammer', tier: 5, colors: { blade: '#8a8a9a', blade_D: '#5a5a6a', accent: '#5a5a6a', accent_D: '#3a3a4a', grip: '#5c4020', grip_D: '#3a2810' } },
+    { id: 'ench_blade', name: 'Enchanted Blade', tier: 7, colors: { blade: '#7ce7ff', blade_D: '#29adff', accent: '#ffd700', accent_D: '#c9a500', grip: '#8a6238', grip_D: '#5c4020' } }
+  ],
+  shield: [
+    { id: 'wood_shield', name: 'Wooden Shield', tier: 1, colors: { body: '#8a6238', body_D: '#5c4020', emblem: '#c4a274', emblem_D: '#8a6238' } },
+    { id: 'iron_shield', name: 'Iron Shield', tier: 3, colors: { body: '#c4c4d4', body_D: '#8a8a9a', emblem: '#ffd700', emblem_D: '#c9a500' } },
+    { id: 'tower_shield', name: 'Tower Shield', tier: 4, colors: { body: '#5a5a6a', body_D: '#3a3a4a', emblem: '#ffd700', emblem_D: '#c9a500' } },
+    { id: 'dragon_ward', name: "Dragon's Ward", tier: 7, colors: { body: '#ff4d4d', body_D: '#c02020', emblem: '#ffd700', emblem_D: '#c9a500' } }
+  ],
+  helmet: [
+    { id: 'leather_cap', name: 'Leather Cap', tier: 2, colors: { main: '#8a6238', main_D: '#5c4020' } },
+    { id: 'iron_helm', name: 'Iron Helm', tier: 4, colors: { main: '#dcdce8', main_D: '#a8a8ba' } },
+    { id: 'horned_helm', name: 'Horned Helm', tier: 5, colors: { main: '#5a5a6a', main_D: '#3a3a4a' } },
+    { id: 'dragon_crown', name: 'Dragon Crown', tier: 7, colors: { main: '#ffd700', main_D: '#c9a500' } }
+  ],
+  cape: [
+    { id: 'torn_cloak', name: 'Torn Cloak', tier: 3, colors: { main: '#8a5a2b', main_D: '#5c3a1a' } },
+    { id: 'knight_cape', name: "Knight's Cape", tier: 4, colors: { main: '#29adff', main_D: '#1b7dbf' } },
+    { id: 'royal_cape', name: 'Royal Cape', tier: 5, colors: { main: '#b030d0', main_D: '#7a1f8f' } },
+    { id: 'dragon_cape', name: 'Dragon-scale Cape', tier: 7, colors: { main: '#ff4d4d', main_D: '#c02020' } }
+  ]
+};
+
+function itemById(slot, id) {
+  const list = GEAR_ITEMS[slot];
+  for (let i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+  return null;
+}
+
+const TIERS = [
+  { minLevel: 1, name: 'ROOKIE', monster: 0, desc: 'Slimes only for now.' },
+  { minLevel: 3, name: 'SQUIRE', monster: 1, desc: 'Giant rats join in at Level 3.' },
+  { minLevel: 5, name: 'HUNTER', monster: 2, desc: 'Goblins at Level 5.' },
+  { minLevel: 7, name: 'KNIGHT', monster: 3, desc: 'Wolves at Level 7.' },
+  { minLevel: 9, name: 'SLAYER', monster: 4, desc: 'Skeletons at Level 9.' },
+  { minLevel: 12, name: 'GUARDIAN', monster: 5, desc: 'Orcs at Level 12.' },
+  { minLevel: 16, name: 'CHAMPION', monster: 6, desc: 'Trolls at Level 16.' },
+  { minLevel: 20, name: 'LEGEND', monster: 7, desc: 'Dragons at Level 20 — the top of the food chain.' }
+];
+
+const STREAK_TIERS = [
+  { minStreak: 0, name: 'None', glow: null },
+  { minStreak: 3, name: 'Warming up', glow: { color: '41,182,255', blur: 14, pulse: false } },
+  { minStreak: 7, name: 'On fire', glow: { color: '255,215,0', blur: 20, pulse: false } },
+  { minStreak: 30, name: 'Unstoppable', glow: { color: '255,0,77', blur: 26, pulse: true } }
+];
+
+function drawSlime(ctx, x, y) {
+  ctx.fillStyle = '#00e436';
+  ctx.fillRect(x - 13, y - 14, 26, 14);
+  ctx.fillRect(x - 9, y - 17, 18, 3);
+  ctx.fillStyle = '#0d0d1a';
+  ctx.fillRect(x - 7, y - 10, 4, 4);
+  ctx.fillRect(x + 3, y - 10, 4, 4);
+}
+function drawRat(ctx, x, y) {
+  ctx.fillStyle = '#8a7a6a';
+  ctx.fillRect(x - 14, y - 12, 24, 10);
+  ctx.fillRect(x + 6, y - 16, 10, 8);
+  ctx.fillStyle = '#6a5a4a';
+  ctx.fillRect(x - 18, y - 8, 6, 2);
+  ctx.fillRect(x + 4, y - 18, 3, 3);
+  ctx.fillRect(x + 11, y - 18, 3, 3);
+  ctx.fillStyle = '#ff004d';
+  ctx.fillRect(x + 12, y - 13, 2, 2);
+  ctx.fillStyle = '#5c4c3c';
+  ctx.fillRect(x - 12, y - 2, 4, 2);
+  ctx.fillRect(x - 2, y - 2, 4, 2);
+}
+function drawGoblin(ctx, x, y) {
+  ctx.fillStyle = '#5ab552';
+  ctx.fillRect(x - 6, y - 30, 12, 10);
+  ctx.fillRect(x - 10, y - 20, 20, 16);
+  ctx.fillRect(x - 10, y - 4, 6, 4);
+  ctx.fillRect(x + 4, y - 4, 6, 4);
+  ctx.fillStyle = '#0d0d1a';
+  ctx.fillRect(x - 4, y - 26, 3, 3);
+  ctx.fillRect(x + 1, y - 26, 3, 3);
+  ctx.fillStyle = '#6b4a2a';
+  ctx.fillRect(x + 10, y - 22, 3, 18);
+}
+function drawWolf(ctx, x, y) {
+  ctx.fillStyle = '#6b6b8a';
+  ctx.fillRect(x - 20, y - 16, 32, 12);
+  ctx.fillRect(x + 10, y - 22, 10, 10);
+  ctx.fillRect(x + 8, y - 26, 4, 5);
+  ctx.fillRect(x + 16, y - 26, 4, 5);
+  ctx.fillRect(x - 20, y - 4, 5, 4);
+  ctx.fillRect(x - 6, y - 4, 5, 4);
+  ctx.fillRect(x + 6, y - 4, 5, 4);
+  ctx.fillStyle = '#ff004d';
+  ctx.fillRect(x + 13, y - 19, 2, 2);
+}
+function drawSkeleton(ctx, x, y) {
+  ctx.fillStyle = '#e8e8dc';
+  ctx.fillRect(x - 5, y - 32, 10, 10);
+  ctx.fillRect(x - 8, y - 20, 16, 14);
+  ctx.fillRect(x - 8, y - 4, 6, 4);
+  ctx.fillRect(x + 2, y - 4, 6, 4);
+  ctx.fillStyle = '#0d0d1a';
+  ctx.fillRect(x - 3, y - 28, 2, 3);
+  ctx.fillRect(x + 1, y - 28, 2, 3);
+  ctx.fillStyle = '#8a8a9a';
+  ctx.fillRect(x + 8, y - 22, 3, 20);
+}
+function drawOrc(ctx, x, y) {
+  ctx.fillStyle = '#3d6b3d';
+  ctx.fillRect(x - 8, y - 36, 16, 12);
+  ctx.fillRect(x - 15, y - 24, 30, 22);
+  ctx.fillRect(x - 15, y - 4, 8, 4);
+  ctx.fillRect(x + 7, y - 4, 8, 4);
+  ctx.fillStyle = '#f5f5f5';
+  ctx.fillRect(x - 5, y - 27, 2, 4);
+  ctx.fillRect(x + 3, y - 27, 2, 4);
+  ctx.fillStyle = '#8a5a2b';
+  ctx.fillRect(x - 22, y - 24, 5, 20);
+  ctx.fillStyle = '#c7c7d6';
+  ctx.fillRect(x - 26, y - 26, 10, 8);
+}
+function drawTroll(ctx, x, y) {
+  ctx.fillStyle = '#5a7a5a';
+  ctx.fillRect(x - 10, y - 40, 20, 14);
+  ctx.fillRect(x - 20, y - 26, 40, 24);
+  ctx.fillRect(x - 20, y - 4, 10, 4);
+  ctx.fillRect(x + 10, y - 4, 10, 4);
+  ctx.fillStyle = '#0d0d1a';
+  ctx.fillRect(x - 5, y - 34, 3, 3);
+  ctx.fillRect(x + 3, y - 34, 3, 3);
+  ctx.fillStyle = '#f5f5f5';
+  ctx.fillRect(x - 7, y - 30, 2, 5);
+  ctx.fillRect(x + 5, y - 30, 2, 5);
+  ctx.fillStyle = '#3a5a3a';
+  ctx.fillRect(x - 30, y - 26, 8, 24);
+}
+function drawDragon(ctx, x, y) {
+  ctx.fillStyle = '#ff4d4d';
+  ctx.fillRect(x - 22, y - 20, 44, 16);
+  ctx.fillRect(x + 18, y - 28, 14, 12);
+  ctx.fillRect(x - 34, y - 14, 14, 6);
+  ctx.beginPath();
+  ctx.moveTo(x - 4, y - 20); ctx.lineTo(x - 4, y - 40); ctx.lineTo(x + 12, y - 20);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#0d0d1a';
+  ctx.fillRect(x + 26, y - 24, 3, 3);
+  ctx.fillStyle = '#ffd700';
+  ctx.fillRect(x - 8, y - 4, 6, 4);
+  ctx.fillRect(x + 6, y - 4, 6, 4);
+}
+
+const MONSTERS = [
+  { tier: 0, name: 'Slime', draw: drawSlime },
+  { tier: 1, name: 'Giant Rat', draw: drawRat },
+  { tier: 2, name: 'Goblin', draw: drawGoblin },
+  { tier: 3, name: 'Wolf', draw: drawWolf },
+  { tier: 4, name: 'Skeleton', draw: drawSkeleton },
+  { tier: 5, name: 'Orc', draw: drawOrc },
+  { tier: 6, name: 'Troll', draw: drawTroll },
+  { tier: 7, name: 'Dragon', draw: drawDragon }
+];
+
+function tierForLevel(lvl) {
+  let t = TIERS[0];
+  for (let i = 0; i < TIERS.length; i++) if (lvl >= TIERS[i].minLevel) t = TIERS[i];
+  return t;
+}
+function tierForStreak(s) {
+  let t = STREAK_TIERS[0];
+  for (let i = 0; i < STREAK_TIERS.length; i++) if (s >= STREAK_TIERS[i].minStreak) t = STREAK_TIERS[i];
+  return t;
+}
+function levelTierIndex(lvl) {
+  let idx = 0;
+  TIERS.forEach((t, i) => { if (lvl >= t.minLevel) idx = i; });
+  return idx;
+}
+
+function currentLevel() { return computeLevelState(readRewards().totalXp).level; }
+function currentStreak() { return readRewards().streakCount; }
+
+/* ---------- Gear persistence ---------- */
+
+function readGear() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LS_GEAR) || 'null');
+    if (raw && raw.foundItems && raw.equipped) return raw;
+  } catch {}
+  return { foundItems: { sword: [], shield: [], helmet: [], cape: [] }, equipped: { sword: null, shield: null, helmet: null, cape: null } };
+}
+function writeGear(gear) {
+  localStorage.setItem(LS_GEAR, JSON.stringify(gear));
+}
+
+let gearState = readGear();
+
+/* ---------- Battle: level gates the monster tier, victory rolls for gear ---------- */
+
+function pickMonster() {
+  const maxTier = levelTierIndex(currentLevel());
+  const weights = [];
+  for (let i = 0; i <= maxTier; i++) weights.push(i === maxTier ? 3 : 1);
+  const total = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  for (let i = 0; i <= maxTier; i++) { r -= weights[i]; if (r <= 0) return MONSTERS[i]; }
+  return MONSTERS[maxTier];
+}
+
+function rollLoot() {
+  // Eligible items are gated by the player's unlocked level tier, not the
+  // specific monster faced this encounter — pickMonster() sometimes picks a
+  // weaker monster for flavor/variety, and gating loot to *that* tier meant
+  // those fights could never drop anything once its few items were already
+  // found (an empty candidate pool with no chance to roll at all).
+  const maxTier = levelTierIndex(currentLevel());
+  const candidates = [];
+  SLOTS.forEach((slot) => {
+    GEAR_ITEMS[slot].forEach((item) => {
+      if (item.tier <= maxTier && gearState.foundItems[slot].indexOf(item.id) === -1) candidates.push({ slot, item });
+    });
+  });
+  if (candidates.length > 0 && Math.random() < 0.55) {
+    const pick = candidates[Math.floor(Math.random() * candidates.length)];
+    gearState.foundItems[pick.slot].push(pick.item.id);
+    if (!gearState.equipped[pick.slot]) gearState.equipped[pick.slot] = pick.item.id;
+    writeGear(gearState);
+    return { type: 'gear', slot: pick.slot, item: pick.item };
+  }
+  return { type: 'xp' };
+}
+
+const PHASE_MS = { approach: 650, clash: 320, victory: 550, loot: 1300 };
+let battle = null;
+
+function startBattle() {
+  if (battle) return;
+  const monster = pickMonster();
+  if (prefersReducedMotion) {
+    showLootFloat(rollLoot());
+    renderSceneStatic();
+    return;
+  }
+  battle = { phase: 'approach', phaseStart: null, monster, monsterX: SCENE_W + 24, loot: null };
+  el.monsterBanner.textContent = 'A WILD ' + monster.name.toUpperCase() + ' APPROACHES!';
+  el.monsterBanner.classList.add('show');
+}
+
+function nextBattlePhase(phase, t) { battle.phase = phase; battle.phaseStart = t; }
+
+function advanceBattle(t) {
+  if (battle.phaseStart === null) battle.phaseStart = t;
+  const elapsed = t - battle.phaseStart;
+  if (battle.phase === 'approach') {
+    const progress = Math.min(1, elapsed / PHASE_MS.approach);
+    battle.monsterX = (SCENE_W + 24) - progress * (SCENE_W + 24 - (SPRITE_X + 58));
+    if (progress >= 1) nextBattlePhase('clash', t);
+  } else if (battle.phase === 'clash') {
+    if (elapsed >= PHASE_MS.clash) {
+      battle.loot = rollLoot();
+      el.monsterBanner.classList.remove('show');
+      nextBattlePhase('victory', t);
+    }
+  } else if (battle.phase === 'victory') {
+    if (elapsed >= PHASE_MS.victory) { showLootFloat(battle.loot); nextBattlePhase('loot', t); }
+  } else if (battle.phase === 'loot') {
+    if (elapsed >= PHASE_MS.loot) battle = null;
+  }
+}
+
+function drawBattle(ctx, t) {
+  const m = battle.monster;
+  if (battle.phase === 'clash') {
+    const shake = Math.sin(t * 0.09) * 3;
+    ctx.save();
+    ctx.translate(shake, 0);
+  }
+  const scale = battle.phase === 'victory' ? Math.max(0, 1 - (t - battle.phaseStart) / PHASE_MS.victory) : 1;
+  ctx.save();
+  ctx.globalAlpha = scale;
+  ctx.translate(battle.monsterX, 0);
+  ctx.scale(scale || 0.001, scale || 0.001);
+  ctx.translate(-battle.monsterX, 0);
+  m.draw(ctx, battle.monsterX, GROUND_Y);
+  ctx.restore();
+  if (battle.phase === 'clash') ctx.restore();
+}
+
+function showLootFloat(loot) {
+  const span = document.createElement('span');
+  span.className = 'loot-float';
+  span.textContent = loot.type === 'gear' ? ('+' + loot.item.name.toUpperCase() + '!') : '+XP (NO DROP)';
+  el.sceneWrap.appendChild(span);
+  setTimeout(() => span.remove(), 1600);
+  renderGearStatus();
+  renderCharacterScreen();
+}
+
+function renderGearStatus() {
+  const total = SLOTS.reduce((sum, slot) => sum + gearState.foundItems[slot].length, 0);
+  el.gearStatus.textContent = total > 0 ? `${total} ITEM${total === 1 ? '' : 'S'} FOUND` : 'NO GEAR FOUND YET';
+}
+
+/* ---------- Sprite rendering: equipped items resolve their own colors ---------- */
+
+function forEachSpritePixel(equippedState, frame, cb) {
+  const f = frame ? 1 : 0;
+
+  const capeItem = equippedState.cape ? itemById('cape', equippedState.cape) : null;
+  if (capeItem) emitShape(CAPE_SHAPE, capeItem.colors, cb);
+
+  const helmetItem = equippedState.helmet ? itemById('helmet', equippedState.helmet) : null;
+  for (let r = 0; r < BASE.length; r++) {
+    if (helmetItem && HELMET_SHAPE_ROWS[r] !== undefined) {
+      const hrow = HELMET_SHAPE_ROWS[r];
+      for (let hc = 0; hc < hrow.length; hc++) if (hrow[hc] !== '.') cb(r, hc, helmetItem.colors.main, helmetItem.colors.main_D);
+    } else {
+      const brow = BASE[r];
+      for (let bc = 0; bc < brow.length; bc++) { const bk = brow[bc]; if (bk !== '.') cb(r, bc, BODY_COLORS[bk], BODY_COLORS[bk + '_D']); }
+    }
+  }
+
+  const legRows = LEGS[f];
+  for (let li = 0; li < legRows.length; li++) {
+    const rowIdx = BASE.length + li;
+    const lrow = legRows[li];
+    for (let lc = 0; lc < lrow.length; lc++) { const lk = lrow[lc]; if (lk !== '.') cb(rowIdx, lc, BODY_COLORS[lk], BODY_COLORS[lk + '_D']); }
+  }
+  const arm = ARM_SWING[f];
+  Object.keys(arm).forEach((r) => { arm[r].forEach((cell) => { cb(+r, cell[0], BODY_COLORS[cell[1]], BODY_COLORS[cell[1] + '_D']); }); });
+
+  const swordItem = equippedState.sword ? itemById('sword', equippedState.sword) : null;
+  if (swordItem) emitShape(SWORD_SHAPE, swordItem.colors, cb);
+  const shieldItem = equippedState.shield ? itemById('shield', equippedState.shield) : null;
+  if (shieldItem) emitShape(SHIELD_SHAPE, shieldItem.colors, cb);
+}
+
+function emitShape(shape, colors, cb) {
+  Object.keys(shape).forEach((r) => {
+    shape[r].forEach((cell) => {
+      const role = cell[1];
+      cb(+r, cell[0], colors[role], colors[role + '_D']);
+    });
+  });
+}
+
+// Shading: light on the left half of the sprite, dark on the right, simulating
+// a light source from the upper-left.
+function paintSpriteOnto(ctx, equippedState, frame, originX, originY, scale) {
+  const cells = [];
+  forEachSpritePixel(equippedState, frame, (row, col, light, dark) => { cells.push([row, col, light, dark]); });
+  cells.forEach((cell) => {
+    ctx.fillStyle = cell[1] >= 7 ? cell[3] : cell[2];
+    ctx.fillRect(originX + cell[1] * scale, originY + cell[0] * scale, scale, scale);
+  });
+}
+
+/* ---------- Scene: scrolling background + walking sprite ---------- */
+
+const SCENE_W = 360, SCENE_H = 200, GROUND_Y = 150, SPRITE_SCALE = 6, SPRITE_X = 68;
+const SPRITE_H = 16 * SPRITE_SCALE;
+const sceneCtx = el.sceneCanvas.getContext('2d');
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function drawTiled(repeatW, speed, scrollX, drawTile) {
+  const offset = (scrollX * speed) % repeatW;
+  for (let x = -offset - repeatW; x < SCENE_W + repeatW; x += repeatW) drawTile(x);
+}
+
+function drawScene(scrollX, bobY, t) {
+  const ctx = sceneCtx;
+  const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+  sky.addColorStop(0, '#1a1a3e');
+  sky.addColorStop(1, '#2d2d5e');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, SCENE_W, SCENE_H);
+
+  ctx.fillStyle = '#3a3a6a';
+  drawTiled(90, 0.15, scrollX, (x) => { ctx.fillRect(x, 24, 28, 8); ctx.fillRect(x + 6, 18, 16, 8); });
+
+  ctx.fillStyle = '#3d2d5e';
+  drawTiled(110, 0.4, scrollX, (x) => {
+    ctx.beginPath();
+    ctx.moveTo(x, GROUND_Y); ctx.lineTo(x + 30, GROUND_Y - 40); ctx.lineTo(x + 70, GROUND_Y);
+    ctx.closePath(); ctx.fill();
+  });
+
+  ctx.fillStyle = '#14142a';
+  ctx.fillRect(0, GROUND_Y, SCENE_W, SCENE_H - GROUND_Y);
+
+  ctx.fillStyle = '#00e436';
+  drawTiled(18, 1, scrollX, (x) => { ctx.fillRect(x, GROUND_Y - 3, 3, 3); ctx.fillRect(x + 8, GROUND_Y - 5, 3, 5); });
+
+  if (battle) {
+    advanceBattle(t);
+    if (battle) drawBattle(ctx, t);
+  }
+
+  const streakTier = tierForStreak(currentStreak());
+  if (streakTier && streakTier.glow) {
+    const g = streakTier.glow;
+    let blur = g.blur * 0.55;
+    if (g.pulse) blur += Math.sin(scrollX * 0.05) * (g.blur * 0.2);
+    ctx.shadowColor = 'rgba(' + g.color + ',0.9)';
+    ctx.shadowBlur = blur;
+  }
+  const walkFrame = battle ? 0 : Math.floor(t / 220) % 2;
+  paintSpriteOnto(ctx, gearState.equipped, walkFrame, SPRITE_X, GROUND_Y - SPRITE_H + bobY, SPRITE_SCALE);
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  return tierForLevel(currentLevel());
+}
+
+let sceneRafId = null, sceneScrollX = 0, sceneLastT = 0;
+
+function sceneTick(t) {
+  const dt = sceneLastT ? Math.min(48, t - sceneLastT) : 16;
+  sceneLastT = t;
+  if (!battle) sceneScrollX += dt * 0.07;
+  const bobY = Math.sin(t * 0.006) * 3;
+  const tier = drawScene(sceneScrollX, bobY, t);
+  updateSceneLabels(tier);
+  sceneRafId = requestAnimationFrame(sceneTick);
+}
+function startSceneLoop() { if (sceneRafId === null && !prefersReducedMotion) { sceneLastT = 0; sceneRafId = requestAnimationFrame(sceneTick); } }
+function stopSceneLoop() { if (sceneRafId !== null) { cancelAnimationFrame(sceneRafId); sceneRafId = null; } }
+function renderSceneStatic() {
+  if (!prefersReducedMotion) return;
+  const tier = drawScene(sceneScrollX, 0, performance.now());
+  updateSceneLabels(tier);
+}
+
+function updateSceneLabels(tier) {
+  el.tierName.textContent = tier.name;
+  el.tierDesc.textContent = tier.desc;
+}
+
+/* ---------- Character screen ---------- */
+
+function renderCharacterScreen() {
+  const scale = 14;
+  el.charCanvas.width = 14 * scale;
+  el.charCanvas.height = 16 * scale;
+  const ctx = el.charCanvas.getContext('2d');
+  ctx.clearRect(0, 0, el.charCanvas.width, el.charCanvas.height);
+  paintSpriteOnto(ctx, gearState.equipped, 0, 0, 0, scale);
+
+  const level = currentLevel();
+  el.charTierName.textContent = tierForLevel(level).name;
+  el.charStatLevel.textContent = `LV ${level}`;
+  el.charStatStreak.textContent = `${currentStreak()} DAY STREAK`;
+
+  SLOTS.forEach((slot) => {
+    const equippedId = gearState.equipped[slot];
+    const equippedItem = equippedId ? itemById(slot, equippedId) : null;
+    document.getElementById('equipped-' + slot).textContent = equippedItem ? equippedItem.name.toUpperCase() : 'NOTHING EQUIPPED';
+
+    const row = document.getElementById('swatches-' + slot);
+    row.innerHTML = '';
+    const found = gearState.foundItems[slot];
+    if (found.length === 0) {
+      const locked = document.createElement('span');
+      locked.className = 'swatch-locked';
+      locked.textContent = 'NOTHING FOUND YET';
+      row.appendChild(locked);
+      return;
+    }
+    found.forEach((id) => {
+      const item = itemById(slot, id);
+      const primaryRole = Object.keys(item.colors)[0];
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'swatch' + (gearState.equipped[slot] === id ? ' equipped' : '');
+      const chip = document.createElement('span');
+      chip.className = 'swatch-color';
+      chip.style.background = item.colors[primaryRole];
+      const name = document.createElement('span');
+      name.className = 'swatch-name';
+      name.textContent = item.name;
+      btn.appendChild(chip); btn.appendChild(name);
+      btn.addEventListener('click', () => {
+        gearState.equipped[slot] = id;
+        writeGear(gearState);
+        renderCharacterScreen();
+        renderSceneStatic();
+      });
+      row.appendChild(btn);
+    });
+  });
 }
 
 /* ---------- Actions ---------- */
@@ -719,12 +1281,17 @@ async function handleSubmit(ev) {
 /* ---------- Wiring ---------- */
 
 function switchView(view) {
+  const showTracker = view === 'tracker';
+  const showCharacter = view === 'character';
   const showMetrics = view === 'metrics';
-  el.viewTracker.hidden = showMetrics;
+  el.viewTracker.hidden = !showTracker;
+  el.viewCharacter.hidden = !showCharacter;
   el.viewMetrics.hidden = !showMetrics;
-  el.navTracker.classList.toggle('active', !showMetrics);
+  el.navTracker.classList.toggle('active', showTracker);
+  el.navCharacter.classList.toggle('active', showCharacter);
   el.navMetrics.classList.toggle('active', showMetrics);
   if (showMetrics) loadMetrics();
+  if (showCharacter) renderCharacterScreen();
 }
 
 function init() {
@@ -739,6 +1306,9 @@ function init() {
   renderStatusDot();
   renderRewards();
   el.soundToggle.checked = soundEnabled();
+  renderGearStatus();
+  renderCharacterScreen();
+  if (prefersReducedMotion) renderSceneStatic(); else startSceneLoop();
 
   setInterval(renderTimer, 1000);
   // Fallback in case the 'online' event doesn't fire reliably on some
@@ -748,6 +1318,7 @@ function init() {
   el.form.addEventListener('submit', handleSubmit);
 
   el.navTracker.addEventListener('click', () => switchView('tracker'));
+  el.navCharacter.addEventListener('click', () => switchView('character'));
   el.navMetrics.addEventListener('click', () => switchView('metrics'));
   el.refreshMetrics.addEventListener('click', () => loadMetrics());
 
@@ -797,7 +1368,13 @@ function init() {
   window.addEventListener('online', () => { renderStatusDot(); flushQueue(); });
   window.addEventListener('offline', renderStatusDot);
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') { renderTimer(); if (navigator.onLine) flushQueue(); }
+    if (document.visibilityState === 'visible') {
+      renderTimer();
+      if (navigator.onLine) flushQueue();
+      startSceneLoop();
+    } else {
+      stopSceneLoop();
+    }
   });
 
   // Custom "Add to Home Screen" prompt (Android/Chromium; Safari has no such event).

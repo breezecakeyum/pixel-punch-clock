@@ -267,6 +267,100 @@
     .xp-bar-fill { transition: none; }
   }
 
+  /* Scroller scene: an 8-bit avatar that walks endlessly and fights a
+     monster the instant you press Stop (see startBattle() in app.js). */
+  .scene-wrap { position: relative; margin-top: 14px; }
+  canvas#scene-canvas {
+    image-rendering: pixelated;
+    width: 100%;
+    height: auto;
+    border: 2px solid var(--border);
+    display: block;
+  }
+  .monster-banner {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--pixel-font);
+    font-size: 10px;
+    color: var(--warn);
+    background: rgba(13,13,26,0.85);
+    border: 2px solid var(--border);
+    padding: 6px 8px;
+    max-width: 90%;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0;
+    transition: opacity .3s ease;
+    pointer-events: none;
+  }
+  .monster-banner.show { opacity: 1; }
+
+  .loot-float {
+    position: absolute;
+    left: 50%;
+    top: -6px;
+    transform: translate(-50%, 0);
+    font-family: var(--pixel-font);
+    font-size: 11px;
+    color: var(--warn);
+    text-shadow: 2px 2px 0 var(--shadow);
+    pointer-events: none;
+    opacity: 0;
+    z-index: 6;
+    white-space: nowrap;
+    animation: loot-float-pop 1.6s cubic-bezier(.2,1.6,.4,1) forwards;
+  }
+  @keyframes loot-float-pop {
+    0% { opacity: 0; transform: translate(-50%, 10px) scale(.5); }
+    20% { opacity: 1; transform: translate(-50%, -6px) scale(1.2); }
+    35% { transform: translate(-50%, -10px) scale(1); }
+    85% { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, -30px) scale(1); }
+  }
+
+  .tier-line { margin-top: 12px; text-align: center; }
+  .tier-name { font-family: var(--pixel-font); font-size: 13px; color: var(--good); text-shadow: 2px 2px 0 var(--shadow); }
+  .tier-desc { font-family: var(--mono-font); font-size: 15px; color: var(--text-dim); margin-top: 4px; }
+  .gear-status { font-family: var(--mono-font); font-size: 14px; color: var(--text-dim); margin-top: 6px; text-align: center; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .loot-float, .monster-banner { animation: none !important; transition: none !important; }
+  }
+
+  /* Character screen: pick which found item to actually wear per slot. */
+  .char-portrait-card { text-align: center; }
+  #char-canvas { image-rendering: pixelated; margin: 0 auto 12px; display: block; }
+  .tier-stats { display: flex; justify-content: center; gap: 10px; font-family: var(--pixel-font); font-size: 11px; color: var(--warn); margin-top: 8px; }
+  .tier-stats span { border: 2px solid var(--border); padding: 6px 10px; background: var(--bg); }
+
+  .slot-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 10px; flex-wrap: wrap; }
+  .slot-label { font-family: var(--pixel-font); font-size: 11px; color: var(--accent); }
+  .slot-equipped { font-family: var(--mono-font); font-size: 16px; color: var(--warn); text-align: right; }
+  .swatch-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .swatch {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    appearance: none;
+    border: 3px solid var(--border);
+    background: var(--surface-2);
+    padding: 6px;
+    box-shadow: 3px 3px 0 var(--shadow);
+    cursor: pointer;
+    min-width: 70px;
+  }
+  .swatch-color { width: 22px; height: 22px; border: 2px solid var(--shadow); }
+  .swatch-name { font-family: var(--mono-font); font-size: 12px; color: var(--text); text-align: center; line-height: 1.1; text-transform: uppercase; }
+  .swatch.equipped { background: var(--accent); }
+  .swatch.equipped .swatch-name { color: var(--bg); }
+  .swatch:active { transform: translate(3px, 3px); box-shadow: none; }
+  .swatch-locked { font-family: var(--mono-font); font-size: 14px; color: var(--text-dim); }
+
   /* Form */
   .field { margin-bottom: 16px; }
   .field:last-child { margin-bottom: 0; }
@@ -464,15 +558,16 @@
     background: var(--surface-2);
     color: var(--text-dim);
     font-family: var(--pixel-font);
-    font-size: 12px;
-    padding: 12px 6px;
+    font-size: 10px;
+    line-height: 1.4;
+    padding: 10px 4px;
     box-shadow: 4px 4px 0 var(--shadow);
     text-transform: uppercase;
   }
   .view-nav-btn:active { transform: translate(4px, 4px); box-shadow: none; }
   .view-nav-btn.active { background: var(--accent); color: var(--bg); }
-  #view-tracker, #view-metrics { display: flex; flex-direction: column; gap: 16px; }
-  #view-tracker[hidden], #view-metrics[hidden] { display: none; }
+  #view-tracker, #view-metrics, #view-character { display: flex; flex-direction: column; gap: 16px; }
+  #view-tracker[hidden], #view-metrics[hidden], #view-character[hidden] { display: none; }
 
   /* Metrics */
   .metrics-header-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -515,6 +610,7 @@
 
 <nav class="view-nav">
   <button class="view-nav-btn active" id="nav-tracker" type="button">Tracker</button>
+  <button class="view-nav-btn" id="nav-character" type="button">Character</button>
   <button class="view-nav-btn" id="nav-metrics" type="button">Metrics</button>
 </nav>
 
@@ -563,6 +659,15 @@
     </div>
     <div class="xp-bar-track"><div class="xp-bar-fill" id="xp-bar-fill"></div></div>
     <div class="xp-bar-label" id="xp-bar-label">0 / 100 XP</div>
+    <div class="scene-wrap">
+      <canvas id="scene-canvas" width="360" height="200"></canvas>
+      <div class="monster-banner" id="monster-banner"></div>
+    </div>
+    <div class="tier-line">
+      <span class="tier-name" id="tier-name">ROOKIE</span>
+      <div class="tier-desc" id="tier-desc">Slimes only for now.</div>
+    </div>
+    <div class="gear-status" id="gear-status">NO GEAR FOUND YET</div>
   </section>
 
   <section class="card">
@@ -645,6 +750,39 @@
     <h2 class="metrics-section-title">By tab</h2>
     <ul class="metrics-list" id="tab-breakdown-list"></ul>
     <p class="empty-state" id="tab-breakdown-empty" hidden>No synced data yet.</p>
+  </section>
+
+</div>
+
+<div id="view-character" hidden>
+
+  <section class="card char-portrait-card">
+    <canvas id="char-canvas"></canvas>
+    <div class="tier-name" id="char-tier-name">ROOKIE</div>
+    <div class="tier-stats">
+      <span id="char-stat-level">LV 1</span>
+      <span id="char-stat-streak">0 DAY STREAK</span>
+    </div>
+  </section>
+
+  <section class="card slot-card">
+    <div class="slot-header"><span class="slot-label">Weapon</span><span class="slot-equipped" id="equipped-sword">NOTHING EQUIPPED</span></div>
+    <div class="swatch-row" id="swatches-sword"></div>
+  </section>
+
+  <section class="card slot-card">
+    <div class="slot-header"><span class="slot-label">Shield</span><span class="slot-equipped" id="equipped-shield">NOTHING EQUIPPED</span></div>
+    <div class="swatch-row" id="swatches-shield"></div>
+  </section>
+
+  <section class="card slot-card">
+    <div class="slot-header"><span class="slot-label">Helmet</span><span class="slot-equipped" id="equipped-helmet">NOTHING EQUIPPED</span></div>
+    <div class="swatch-row" id="swatches-helmet"></div>
+  </section>
+
+  <section class="card slot-card">
+    <div class="slot-header"><span class="slot-label">Cape</span><span class="slot-equipped" id="equipped-cape">NOTHING EQUIPPED</span></div>
+    <div class="swatch-row" id="swatches-cape"></div>
   </section>
 
 </div>
