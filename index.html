@@ -311,7 +311,11 @@
      event, or an idle vignette (see updateSceneModeTag() in app.js). */
   .scene-mode-tag {
     position: absolute;
-    top: 8px;
+    /* Bottom, not top — the monster banner is centered at the top and can run
+       up to 90% of the canvas width, so at smaller render sizes a long event
+       banner ("DUNGEON RAID! DUNGEON ZOMBIE APPEARS!") reached far enough
+       left to sit on top of this tag when both lived in the same corner. */
+    bottom: 8px;
     left: 8px;
     font-family: var(--pixel-font);
     font-size: 8px;
