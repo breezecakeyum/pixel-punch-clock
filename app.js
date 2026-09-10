@@ -190,6 +190,7 @@ const el = {
   charTierName: document.getElementById('char-tier-name'),
   charStatLevel: document.getElementById('char-stat-level'),
   charStatStreak: document.getElementById('char-stat-streak'),
+  syncGameState: document.getElementById('sync-game-state'),
   generateSaveCode: document.getElementById('generate-save-code'),
   saveCodeField: document.getElementById('save-code-field'),
   saveCodeOutput: document.getElementById('save-code-output'),
@@ -1372,18 +1373,27 @@ async function pushGameState() {
   }
 }
 
+// Returns a status string so a manual "Sync now" click can report what
+// happened; the automatic call sites (init, online, visibilitychange) just
+// fire it and ignore the result.
 async function pullGameState() {
   const webhookUrl = localStorage.getItem(LS_WEBHOOK);
-  if (!webhookUrl || !navigator.onLine) return;
+  if (!webhookUrl) return 'no-webhook';
+  if (!navigator.onLine) return 'offline';
   try {
     const res = await fetchJSONP(webhookUrl, { action: 'state' });
-    if (!res || res.ok !== true || !res.state) return;
-    const merged = mergeStatePayloads(currentStatePayload(), res.state);
-    applyStatePayload(merged);
-    pushGameState(); // write the merged result back so both sides converge
+    if (!res || res.ok !== true) return 'error';
+    if (res.state) {
+      const merged = mergeStatePayloads(currentStatePayload(), res.state);
+      applyStatePayload(merged);
+    }
+    // Push even when there was nothing to pull yet (first sync ever) so this
+    // device's state seeds the sheet instead of silently doing nothing; also
+    // writes the merged result back so both sides converge.
+    await pushGameState();
+    return 'ok';
   } catch {
-    // Offline or the request failed — local state stays authoritative until
-    // the next successful pull.
+    return 'error';
   }
 }
 
@@ -1531,6 +1541,15 @@ function init() {
     renderLog();
     renderPendingBadge();
     toast('Activity cleared');
+  });
+
+  el.syncGameState.addEventListener('click', async () => {
+    toast('Syncing…');
+    const status = await pullGameState();
+    if (status === 'no-webhook') toast('Set the webhook URL in settings first');
+    else if (status === 'offline') toast("You're offline");
+    else if (status === 'error') toast('Sync failed — try again in a moment');
+    else toast('Progress synced');
   });
 
   el.generateSaveCode.addEventListener('click', () => {
