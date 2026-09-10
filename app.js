@@ -1150,7 +1150,7 @@ function advanceGhost(t) {
   const elapsed = t - ghost.phaseStart;
   if (ghost.phase === 'approach') {
     const progress = Math.min(1, elapsed / GHOST_MS.approach);
-    ghost.x = (SCENE_W + 24) - progress * (SCENE_W + 24 - (SPRITE_X + 58));
+    ghost.x = (SCENE_W + 24) - progress * (SCENE_W + 24 - MONSTER_REST_X);
     if (progress >= 1) { ghost.phase = 'clash'; ghost.phaseStart = t; }
   } else if (ghost.phase === 'clash') {
     if (elapsed >= GHOST_MS.clash) { ghost.phase = 'fade'; ghost.phaseStart = t; }
@@ -1166,7 +1166,7 @@ function drawGhost(ctx, t) {
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.translate(shake, 0);
-  ghost.monster.draw(ctx, ghost.x, GROUND_Y);
+  scaleMonsterAt(ctx, ghost.x, GROUND_Y, () => drawMonsterWithOutline(ctx, ghost.monster, ghost.x, GROUND_Y));
   ctx.restore();
 }
 
@@ -1270,7 +1270,7 @@ function advanceBattle(t) {
   const elapsed = t - battle.phaseStart;
   if (battle.phase === 'approach') {
     const progress = Math.min(1, elapsed / PHASE_MS.approach);
-    battle.monsterX = (SCENE_W + 24) - progress * (SCENE_W + 24 - (SPRITE_X + 58));
+    battle.monsterX = (SCENE_W + 24) - progress * (SCENE_W + 24 - MONSTER_REST_X);
     if (progress >= 1) nextBattlePhase('clash', t);
   } else if (battle.phase === 'clash') {
     if (elapsed >= PHASE_MS.clash) {
@@ -1283,6 +1283,58 @@ function advanceBattle(t) {
   } else if (battle.phase === 'loot') {
     if (elapsed >= PHASE_MS.loot) battle = null;
   }
+}
+
+// Monsters are drawn at their original hand-picked pixel sizes (see
+// drawSlime etc.) which reads small next to the avatar's 90x96 footprint —
+// this scales any monster up around its own ground-contact point (so bigger
+// monsters grow from their feet, not from the canvas corner) without having
+// to touch each draw function's coordinates individually.
+const MONSTER_SCALE = 1.7;
+
+function scaleMonsterAt(ctx, x, y, drawFn) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(MONSTER_SCALE, MONSTER_SCALE);
+  ctx.translate(-x, -y);
+  drawFn();
+  ctx.restore();
+}
+
+// A thin 1px dark outline behind each monster — some environment palettes
+// put a similarly-toned background right behind a monster's own colors
+// (e.g. a green slime against mossy dungeon stone), and a dark edge keeps
+// the silhouette readable regardless of what's behind it. Rendered once per
+// monster into an off-screen buffer and cached, since every monster's shape
+// is a fixed set of fillRect/path calls with no time-dependent drawing.
+const MONSTER_OUTLINE_COLOR = '#000000';
+const OUTLINE_BUF_W = 120, OUTLINE_BUF_H = 90;
+const OUTLINE_ANCHOR_X = 60, OUTLINE_ANCHOR_Y = 50;
+const monsterOutlineCache = new Map();
+
+function getMonsterOutline(monster) {
+  let canvas = monsterOutlineCache.get(monster);
+  if (canvas) return canvas;
+  canvas = document.createElement('canvas');
+  canvas.width = OUTLINE_BUF_W;
+  canvas.height = OUTLINE_BUF_H;
+  const octx = canvas.getContext('2d');
+  monster.draw(octx, OUTLINE_ANCHOR_X, OUTLINE_ANCHOR_Y);
+  octx.globalCompositeOperation = 'source-in';
+  octx.fillStyle = MONSTER_OUTLINE_COLOR;
+  octx.fillRect(0, 0, OUTLINE_BUF_W, OUTLINE_BUF_H);
+  monsterOutlineCache.set(monster, canvas);
+  return canvas;
+}
+
+function drawMonsterWithOutline(ctx, monster, x, y) {
+  const outline = getMonsterOutline(monster);
+  const ox = x - OUTLINE_ANCHOR_X, oy = y - OUTLINE_ANCHOR_Y;
+  ctx.drawImage(outline, ox - 1, oy);
+  ctx.drawImage(outline, ox + 1, oy);
+  ctx.drawImage(outline, ox, oy - 1);
+  ctx.drawImage(outline, ox, oy + 1);
+  monster.draw(ctx, x, y);
 }
 
 function drawBattle(ctx, t) {
@@ -1298,7 +1350,7 @@ function drawBattle(ctx, t) {
   ctx.translate(battle.monsterX, 0);
   ctx.scale(scale || 0.001, scale || 0.001);
   ctx.translate(-battle.monsterX, 0);
-  m.draw(ctx, battle.monsterX, GROUND_Y);
+  scaleMonsterAt(ctx, battle.monsterX, GROUND_Y, () => drawMonsterWithOutline(ctx, m, battle.monsterX, GROUND_Y));
   ctx.restore();
   if (battle.phase === 'clash') ctx.restore();
 }
@@ -1389,6 +1441,11 @@ function paintSpriteOnto(ctx, equippedState, frame, originX, originY, scale) {
 
 const SCENE_W = 360, SCENE_H = 200, GROUND_Y = 150, SPRITE_SCALE = 6, SPRITE_X = 68;
 const SPRITE_H = 16 * SPRITE_SCALE;
+// Where a monster settles once it's finished approaching, for both the real
+// battle and the skirmish ghost — pushed out from the avatar's own SPRITE_X
+// footprint so a monster scaled up by MONSTER_SCALE reads as standing next
+// to the avatar during a clash instead of mostly hiding behind it.
+const MONSTER_REST_X = SPRITE_X + 100;
 let sceneCtx = el.sceneCanvas.getContext('2d');
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
