@@ -1313,19 +1313,36 @@ function startBattle(eventEnvId) {
   // clean; they're meant to read as their own distinct, bigger moment.
   const usingGhost = !isEvent && ghost && (ghost.phase === 'approach' || ghost.phase === 'clash');
   const monster = isEvent ? pickEventMonster(eventEnvId) : (usingGhost ? ghost.monster : pickMonster());
-  const startX = usingGhost ? ghost.x : SCENE_W + 24;
-  const startPhase = usingGhost ? 'clash' : 'approach';
+
+  // A ghost caught mid-approach keeps its progress instead of jumping
+  // straight into clash — otherwise Stop could start a "fight" with the
+  // monster still stranded on the far side of the screen while the avatar's
+  // already mid-swing at it. Only a ghost that had already closed to clash
+  // range carries straight into clash; everything else (fresh encounters
+  // included) proceeds through a normal approach. Progress carries over as a
+  // fraction, not raw elapsed time, since the ghost and battle approaches
+  // run on different durations (GHOST_MS.approach vs PHASE_MS.approach).
+  let startPhase = 'approach', startX = SCENE_W + 24, startPhaseStart = null;
+  if (usingGhost && ghost.phase === 'clash') {
+    startPhase = 'clash';
+    startX = ghost.x;
+  } else if (usingGhost) {
+    const nowT = performance.now();
+    const ghostProgress = Math.min(1, (nowT - ghost.phaseStart) / GHOST_MS.approach);
+    startX = ghost.x;
+    startPhaseStart = nowT - ghostProgress * PHASE_MS.approach;
+  }
   ghost = null;
   if (prefersReducedMotion) {
     showLootFloat(isEvent ? rollEventLoot(eventEnvId) : rollLoot());
     renderSceneStatic();
     return;
   }
-  battle = { phase: startPhase, phaseStart: null, monster, monsterX: startX, loot: null, envId: eventEnvId || null };
+  battle = { phase: startPhase, phaseStart: startPhaseStart, monster, monsterX: startX, loot: null, envId: eventEnvId || null };
   const env = isEvent ? ENVIRONMENTS.find((e) => e.id === eventEnvId) : null;
   el.monsterBanner.textContent = isEvent
     ? `${env.eventName.toUpperCase()}! ${monster.name.toUpperCase()} APPEARS!`
-    : usingGhost
+    : startPhase === 'clash'
       ? monster.name.toUpperCase() + '!'
       : 'A WILD ' + monster.name.toUpperCase() + ' APPROACHES!';
   el.monsterBanner.classList.add('show');
