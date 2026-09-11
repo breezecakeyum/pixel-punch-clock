@@ -366,10 +366,14 @@
 
   /* Character screen: pick which found item to actually wear per slot. */
   .char-portrait-card { text-align: center; }
+  .char-portrait-card .field { text-align: left; margin-bottom: 18px; }
   #char-canvas { image-rendering: pixelated; margin: 0 auto 12px; display: block; }
   .tier-stats { display: flex; justify-content: center; gap: 10px; font-family: var(--pixel-font); font-size: 11px; color: var(--warn); margin-top: 8px; }
   .tier-stats span { border: 2px solid var(--border); padding: 6px 10px; background: var(--bg); }
 
+  .swatch-group { margin-bottom: 16px; }
+  .swatch-group:last-child { margin-bottom: 0; }
+  .swatch-group-label { font-family: var(--mono-font); font-size: 14px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
   .slot-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 10px; flex-wrap: wrap; }
   .slot-label { font-family: var(--pixel-font); font-size: 11px; color: var(--accent); }
   .slot-equipped { font-family: var(--mono-font); font-size: 16px; color: var(--warn); text-align: right; }
@@ -860,11 +864,39 @@
 <div id="view-character" hidden>
 
   <section class="card char-portrait-card">
+    <div class="field">
+      <label for="avatar-name">Name</label>
+      <input type="text" id="avatar-name" maxlength="14" placeholder="Hero" autocomplete="off" autocapitalize="words" />
+    </div>
     <canvas id="char-canvas"></canvas>
     <div class="tier-name" id="char-tier-name">ROOKIE</div>
     <div class="tier-stats">
       <span id="char-stat-level">LV 1</span>
       <span id="char-stat-streak">0 DAY STREAK</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 class="metrics-section-title">Look</h2>
+    <div class="swatch-group">
+      <div class="swatch-group-label">Hair</div>
+      <div class="swatch-row" id="swatches-hair"></div>
+    </div>
+    <div class="swatch-group">
+      <div class="swatch-group-label">Skin</div>
+      <div class="swatch-row" id="swatches-skin"></div>
+    </div>
+    <div class="swatch-group">
+      <div class="swatch-group-label">Tunic</div>
+      <div class="swatch-row" id="swatches-tunic"></div>
+    </div>
+    <div class="swatch-group">
+      <div class="swatch-group-label">Pants</div>
+      <div class="swatch-row" id="swatches-pants"></div>
+    </div>
+    <div class="swatch-group">
+      <div class="swatch-group-label">Boots</div>
+      <div class="swatch-row" id="swatches-boots"></div>
     </div>
   </section>
 

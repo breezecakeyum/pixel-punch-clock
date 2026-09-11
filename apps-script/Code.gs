@@ -166,9 +166,10 @@ function getOrCreateSheet(tabName) {
 /* ---------- Game state (level / streak / gear), one overwritten row ---------- */
 
 var GAME_STATE_SHEET_NAME = '_GameState';
-// EventProgress appended at the end (not inserted earlier) so a sheet from
-// before this column existed keeps its existing column positions intact.
-var GAME_STATE_HEADERS = ['UpdatedAt', 'TotalXp', 'StreakCount', 'LastStreakDate', 'FoundItems', 'Equipped', 'EventProgress'];
+// EventProgress and Appearance appended at the end (not inserted earlier) so
+// a sheet from before those columns existed keeps its existing column
+// positions intact.
+var GAME_STATE_HEADERS = ['UpdatedAt', 'TotalXp', 'StreakCount', 'LastStreakDate', 'FoundItems', 'Equipped', 'EventProgress', 'Appearance'];
 
 function getOrCreateGameStateSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -177,10 +178,12 @@ function getOrCreateGameStateSheet_() {
     sheet = ss.insertSheet(GAME_STATE_SHEET_NAME);
     sheet.appendRow(GAME_STATE_HEADERS);
     sheet.setFrozenRows(1);
-    // LastStreakDate/FoundItems/Equipped hold date-shaped or JSON text — force
-    // plain-text format on that row up front so Sheets never reinterprets them
-    // (see the COLUMN_FORMATS comment above for why that matters here).
+    // LastStreakDate/FoundItems/Equipped/Appearance hold date-shaped or JSON
+    // text — force plain-text format on that row up front so Sheets never
+    // reinterprets them (see the COLUMN_FORMATS comment above for why that
+    // matters here).
     sheet.getRange(2, 4, 1, 3).setNumberFormat(TEXT_FORMAT);
+    sheet.getRange(2, 8, 1, 1).setNumberFormat(TEXT_FORMAT);
     try { sheet.hideSheet(); } catch (err) {} // best-effort; fine if it stays visible
   }
   return sheet;
@@ -196,6 +199,7 @@ function saveGameState(body) {
     forceText(JSON.stringify(body.f || {})),
     forceText(JSON.stringify(body.e || {})),
     Number(body.ep) || 0,
+    forceText(JSON.stringify(body.ap || {})),
   ];
   sheet.getRange(2, 1, 1, row.length).setValues([row]);
   return { ok: true };
@@ -205,9 +209,10 @@ function loadGameState() {
   var sheet = getOrCreateGameStateSheet_();
   if (sheet.getLastRow() < 2) return { ok: true, state: null };
   var row = sheet.getRange(2, 1, 1, GAME_STATE_HEADERS.length).getValues()[0];
-  var foundItems = {}, equipped = {};
+  var foundItems = {}, equipped = {}, appearance = {};
   try { foundItems = JSON.parse(stripForcedTextMarker(row[4]) || '{}'); } catch (err) {}
   try { equipped = JSON.parse(stripForcedTextMarker(row[5]) || '{}'); } catch (err) {}
+  try { appearance = JSON.parse(stripForcedTextMarker(row[7]) || '{}'); } catch (err) {}
   var lsd = row[3] ? stripForcedTextMarker(row[3]) : '';
   return {
     ok: true,
@@ -219,6 +224,7 @@ function loadGameState() {
       f: foundItems,
       e: equipped,
       ep: Number(row[6]) || 0,
+      ap: appearance,
     },
   };
 }

@@ -205,6 +205,7 @@ const el = {
   charTierName: document.getElementById('char-tier-name'),
   charStatLevel: document.getElementById('char-stat-level'),
   charStatStreak: document.getElementById('char-stat-streak'),
+  avatarName: document.getElementById('avatar-name'),
   syncGameState: document.getElementById('sync-game-state'),
   generateSaveCode: document.getElementById('generate-save-code'),
   saveCodeField: document.getElementById('save-code-field'),
@@ -746,14 +747,74 @@ function grantReward(durationSeconds) {
 
 const SLOTS = ['sword', 'shield', 'helmet', 'cape'];
 
-// Body colors are fixed (not customizable) — only equipment varies.
-const BODY_COLORS = {
-  H: '#a06b35', H_D: '#6b4520',
-  S: '#f0b088', S_D: '#d4926a',
-  T: '#29adff', T_D: '#1b7dbf',
-  P: '#3a3a5a', P_D: '#22223a',
-  B: '#1a1a22', B_D: '#0a0a10'
-};
+// Hair/skin/tunic/pants/boots are each independently recolorable from a
+// small curated palette (not a full color picker) so every combination
+// still looks intentional. currentBodyColors() resolves the player's
+// current picks into the same {H,H_D,S,S_D,...} shape the sprite grid
+// expects, replacing what used to be one fixed constant.
+const HAIR_OPTIONS = [
+  { id: 'brown', c: '#a06b35', d: '#6b4520' },
+  { id: 'black', c: '#2a2a2a', d: '#161616' },
+  { id: 'blonde', c: '#e8c468', d: '#c4a048' },
+  { id: 'red', c: '#c1502e', d: '#8a3820' },
+  { id: 'white', c: '#e8e8e8', d: '#b8b8b8' }
+];
+const SKIN_OPTIONS = [
+  { id: 'tan', c: '#f0b088', d: '#d4926a' },
+  { id: 'light', c: '#ffd9b3', d: '#e0b088' },
+  { id: 'olive', c: '#c98f5e', d: '#a06f42' },
+  { id: 'deep', c: '#a9714a', d: '#7d5133' }
+];
+const TUNIC_OPTIONS = [
+  { id: 'blue', c: '#29adff', d: '#1b7dbf' },
+  { id: 'red', c: '#ff4d4d', d: '#c02020' },
+  { id: 'green', c: '#3d9d3d', d: '#2a6e2a' },
+  { id: 'purple', c: '#b030d0', d: '#7a1f8f' },
+  { id: 'gold', c: '#ffd700', d: '#c9a500' }
+];
+const PANTS_OPTIONS = [
+  { id: 'navy', c: '#3a3a5a', d: '#22223a' },
+  { id: 'brown', c: '#5c4020', d: '#3a2810' },
+  { id: 'black', c: '#2a2a2a', d: '#161616' },
+  { id: 'gray', c: '#5a5a6a', d: '#3a3a4a' }
+];
+const BOOTS_OPTIONS = [
+  { id: 'black', c: '#1a1a22', d: '#0a0a10' },
+  { id: 'brown', c: '#4a3220', d: '#2a1c10' }
+];
+const APPEARANCE_SLOTS = [
+  { key: 'hair', options: HAIR_OPTIONS, colorKey: 'H' },
+  { key: 'skin', options: SKIN_OPTIONS, colorKey: 'S' },
+  { key: 'tunic', options: TUNIC_OPTIONS, colorKey: 'T' },
+  { key: 'pants', options: PANTS_OPTIONS, colorKey: 'P' },
+  { key: 'boots', options: BOOTS_OPTIONS, colorKey: 'B' }
+];
+
+const LS_APPEARANCE = 'tt_appearance';
+function readAppearance() {
+  let raw = null;
+  try { raw = JSON.parse(localStorage.getItem(LS_APPEARANCE) || 'null'); } catch {}
+  const out = { name: (raw && raw.name) || '' };
+  APPEARANCE_SLOTS.forEach((slot) => {
+    const found = raw && slot.options.some((o) => o.id === raw[slot.key]);
+    out[slot.key] = found ? raw[slot.key] : slot.options[0].id;
+  });
+  return out;
+}
+function writeAppearance(appearance) {
+  localStorage.setItem(LS_APPEARANCE, JSON.stringify(appearance));
+}
+let appearanceState = readAppearance();
+
+function currentBodyColors() {
+  const colors = {};
+  APPEARANCE_SLOTS.forEach((slot) => {
+    const opt = slot.options.find((o) => o.id === appearanceState[slot.key]) || slot.options[0];
+    colors[slot.colorKey] = opt.c;
+    colors[slot.colorKey + '_D'] = opt.d;
+  });
+  return colors;
+}
 
 const BASE = [
   '......HH......',
@@ -767,11 +828,15 @@ const BASE = [
   '...TTTTTTTT...',
   '.....TTTT.....'
 ];
-const LEGS = [
-  ['.....PPPP.....', '.....PPPP.....', '.....PP.PP....', '.....PP.PP....', '....BB..BB....', '....BB..BB....'],
-  ['.....PPPP.....', '.....PPPP.....', '....PP...PP...', '....PP...PP...', '...BB....BB...', '...BB....BB...']
-];
-const ARM_SWING = [{ 9: [[3, 'T']] }, { 9: [[10, 'T']] }];
+// A 4-frame walk cycle (stride, passing, stride, passing) instead of the old
+// 2-frame leg-swap — the "passing" frames (feet nearly together) are what
+// make a walk read as smooth motion rather than a slideshow, and it's how
+// most NES/SNES character sprites actually handled walking.
+const LEGS_STRIDE_A = ['.....PPPP.....', '.....PPPP.....', '.....PP.PP....', '.....PP.PP....', '....BB..BB....', '....BB..BB....'];
+const LEGS_STRIDE_B = ['.....PPPP.....', '.....PPPP.....', '....PP...PP...', '....PP...PP...', '...BB....BB...', '...BB....BB...'];
+const LEGS_PASSING = ['.....PPPP.....', '.....PPPP.....', '......PP......', '......PP......', '.....BBBB.....', '.....BBBB.....'];
+const LEGS = [LEGS_STRIDE_A, LEGS_PASSING, LEGS_STRIDE_B, LEGS_PASSING];
+const ARM_SWING = [{ 9: [[3, 'T']] }, {}, { 9: [[10, 'T']] }, {}];
 
 // Gear shapes: fixed position + role name per slot. Color comes from whichever
 // item is equipped, so the same shape can be a Wooden Sword or an Enchanted
@@ -1330,7 +1395,27 @@ function getMonsterOutline(monster) {
   return canvas;
 }
 
-function drawMonsterWithOutline(ctx, monster, x, y) {
+// A white silhouette of a monster, generated once and cached the same way
+// as the outline above — reused as a brief hit-flash at the moment of
+// impact (see monsterClashVisual) without hand-drawing new frames per
+// monster.
+const monsterFlashCache = new Map();
+function getMonsterFlash(monster) {
+  let canvas = monsterFlashCache.get(monster);
+  if (canvas) return canvas;
+  canvas = document.createElement('canvas');
+  canvas.width = OUTLINE_BUF_W;
+  canvas.height = OUTLINE_BUF_H;
+  const fctx = canvas.getContext('2d');
+  monster.draw(fctx, OUTLINE_ANCHOR_X, OUTLINE_ANCHOR_Y);
+  fctx.globalCompositeOperation = 'source-in';
+  fctx.fillStyle = '#ffffff';
+  fctx.fillRect(0, 0, OUTLINE_BUF_W, OUTLINE_BUF_H);
+  monsterFlashCache.set(monster, canvas);
+  return canvas;
+}
+
+function drawMonsterWithOutline(ctx, monster, x, y, flashAlpha) {
   const outline = getMonsterOutline(monster);
   const ox = x - OUTLINE_ANCHOR_X, oy = y - OUTLINE_ANCHOR_Y;
   ctx.drawImage(outline, ox - 1, oy);
@@ -1338,24 +1423,122 @@ function drawMonsterWithOutline(ctx, monster, x, y) {
   ctx.drawImage(outline, ox, oy - 1);
   ctx.drawImage(outline, ox, oy + 1);
   monster.draw(ctx, x, y);
+  if (flashAlpha > 0) {
+    ctx.save();
+    ctx.globalAlpha = flashAlpha;
+    ctx.drawImage(getMonsterFlash(monster), ox, oy);
+    ctx.restore();
+  }
+}
+
+// Monster's reaction during the clash phase, expressed as a fraction (0-1)
+// of however long the clash lasts rather than fixed milliseconds — a lunge
+// toward the avatar as the swing comes in, a squash-and-flash at the moment
+// of impact, then a recoil past its resting spot before the next phase
+// (victory) takes over the fade-out. Same transform-based approach as the
+// outline/scale treatment, so it applies to any monster uniformly.
+function monsterClashVisual(ratio) {
+  if (ratio < 0.35) return { xOffset: -14 * (ratio / 0.35), scaleX: 1, scaleY: 1, flash: 0 };
+  if (ratio < 0.55) return { xOffset: -14, scaleX: 1.25, scaleY: 0.75, flash: 1 };
+  const rp = (ratio - 0.55) / 0.45;
+  return { xOffset: -14 + 20 * rp, scaleX: 1, scaleY: 1, flash: Math.max(0, 1 - rp * 3) };
+}
+
+// The avatar's attack overlay reuses the existing battle phases instead of
+// running its own separate clock: windup during the tail of "approach" (the
+// blade is already raised by the time the monster arrives), "strike" for
+// the full clash, "recover" easing back through victory. This keeps the
+// reward-critical phase timings (and the loot roll at clash's end)
+// completely untouched — only the pose shown during each phase is new.
+function avatarAttackPhase(t) {
+  if (!battle || battle.phaseStart === null) return null;
+  const elapsed = t - battle.phaseStart;
+  if (battle.phase === 'approach') return elapsed >= PHASE_MS.approach - 150 ? 'windup' : null;
+  if (battle.phase === 'clash') return 'strike';
+  if (battle.phase === 'victory') return 'recover';
+  return null;
+}
+function avatarLungeX(t) {
+  if (!battle || battle.phaseStart === null) return 0;
+  const elapsed = t - battle.phaseStart;
+  if (battle.phase === 'clash') return 5;
+  if (battle.phase === 'victory') return 5 * Math.max(0, 1 - elapsed / PHASE_MS.victory);
+  return 0;
+}
+// A brief triangular fade centered on the same impact moment the monster
+// flashes at (see monsterClashVisual's 0.35-0.55 window), so the spark and
+// the hit-flash read as one connected moment rather than two coincidences.
+function avatarSparkAlpha(t) {
+  if (!battle || battle.phase !== 'clash' || battle.phaseStart === null) return 0;
+  const ratio = Math.min(1, (t - battle.phaseStart) / PHASE_MS.clash);
+  if (ratio < 0.25 || ratio > 0.65) return 0;
+  return ratio < 0.45 ? (ratio - 0.25) / 0.2 : 1 - (ratio - 0.45) / 0.2;
+}
+
+// Each pose is a straight diagonal line (one column-step per row) so the
+// blade always reads as long and thin rather than a short wide block. Roles
+// ('blade'/'accent'/'grip') resolve against whichever sword is actually
+// equipped, same as the resting SWORD_SHAPE — an unarmed player still gets
+// the lunge and arm-swing motion, just no weapon drawn on top.
+const ATTACK_SWORD_POSES = {
+  windup: { 0: [[14, 'blade']], 1: [[13, 'blade']], 2: [[12, 'blade']], 3: [[11, 'blade']], 4: [[10, 'grip']] },
+  strike: { 4: [[16, 'blade']], 5: [[15, 'blade']], 6: [[14, 'blade']], 7: [[13, 'blade']], 8: [[12, 'blade']], 9: [[11, 'grip']] },
+  recover: { 3: [[11, 'blade']], 4: [[11, 'blade']], 5: [[11, 'blade']], 6: [[11, 'blade'], [12, 'accent']], 7: [[11, 'grip']], 8: [[11, 'grip']] }
+};
+function drawAttackOverlay(ctx, phase, originX, originY, scale) {
+  const swordId = gearState.equipped.sword;
+  const swordItem = swordId ? itemById('sword', swordId) : null;
+  if (!swordItem) return;
+  const shape = ATTACK_SWORD_POSES[phase];
+  if (!shape) return;
+  Object.keys(shape).forEach((r) => {
+    shape[r].forEach((cell) => {
+      const role = cell[1];
+      const light = swordItem.colors[role], dark = swordItem.colors[role + '_D'];
+      ctx.fillStyle = cell[0] >= 7 ? dark : light;
+      ctx.fillRect(originX + cell[0] * scale, originY + (+r) * scale, scale, scale);
+    });
+  });
+}
+function drawImpactSpark(ctx, x, y, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#fff5cc';
+  ctx.fillRect(x - 7, y - 1, 4, 2);
+  ctx.fillRect(x + 3, y - 1, 4, 2);
+  ctx.fillRect(x - 1, y - 7, 2, 4);
+  ctx.fillRect(x - 1, y + 3, 2, 4);
+  ctx.fillStyle = '#ffd700';
+  ctx.fillRect(x - 1, y - 1, 2, 2);
+  ctx.restore();
 }
 
 function drawBattle(ctx, t) {
   const m = battle.monster;
+  const elapsed = t - battle.phaseStart;
+
+  let xOffset = 0, squashX = 1, squashY = 1, flash = 0;
   if (battle.phase === 'clash') {
-    const shake = Math.sin(t * 0.09) * 3;
-    ctx.save();
-    ctx.translate(shake, 0);
+    const mv = monsterClashVisual(Math.min(1, elapsed / PHASE_MS.clash));
+    xOffset = mv.xOffset; squashX = mv.scaleX; squashY = mv.scaleY; flash = mv.flash;
   }
-  const scale = battle.phase === 'victory' ? Math.max(0, 1 - (t - battle.phaseStart) / PHASE_MS.victory) : 1;
+  const monsterX = battle.monsterX + xOffset;
+
+  const scale = battle.phase === 'victory' ? Math.max(0, 1 - elapsed / PHASE_MS.victory) : 1;
   ctx.save();
   ctx.globalAlpha = scale;
-  ctx.translate(battle.monsterX, 0);
+  ctx.translate(monsterX, 0);
   ctx.scale(scale || 0.001, scale || 0.001);
-  ctx.translate(-battle.monsterX, 0);
-  scaleMonsterAt(ctx, battle.monsterX, GROUND_Y, () => drawMonsterWithOutline(ctx, m, battle.monsterX, GROUND_Y));
+  ctx.translate(-monsterX, 0);
+
+  ctx.save();
+  ctx.translate(monsterX, GROUND_Y);
+  ctx.scale(squashX, squashY);
+  ctx.translate(-monsterX, -GROUND_Y);
+  scaleMonsterAt(ctx, monsterX, GROUND_Y, () => drawMonsterWithOutline(ctx, m, monsterX, GROUND_Y, flash));
   ctx.restore();
-  if (battle.phase === 'clash') ctx.restore();
+
+  ctx.restore();
 }
 
 function showLootFloat(loot) {
@@ -1389,7 +1572,10 @@ function renderEventMeter() {
 /* ---------- Sprite rendering: equipped items resolve their own colors ---------- */
 
 function forEachSpritePixel(equippedState, frame, cb) {
-  const f = frame ? 1 : 0;
+  // frame is now a 0-3 index into the 4-frame walk cycle (was a 0/1 boolean
+  // in the old 2-frame system) — index directly instead of collapsing to 1.
+  const f = ((frame % LEGS.length) + LEGS.length) % LEGS.length;
+  const colors = currentBodyColors();
 
   const capeItem = equippedState.cape ? itemById('cape', equippedState.cape) : null;
   if (capeItem) emitShape(CAPE_SHAPE, capeItem.colors, cb);
@@ -1401,7 +1587,7 @@ function forEachSpritePixel(equippedState, frame, cb) {
       for (let hc = 0; hc < hrow.length; hc++) if (hrow[hc] !== '.') cb(r, hc, helmetItem.colors.main, helmetItem.colors.main_D);
     } else {
       const brow = BASE[r];
-      for (let bc = 0; bc < brow.length; bc++) { const bk = brow[bc]; if (bk !== '.') cb(r, bc, BODY_COLORS[bk], BODY_COLORS[bk + '_D']); }
+      for (let bc = 0; bc < brow.length; bc++) { const bk = brow[bc]; if (bk !== '.') cb(r, bc, colors[bk], colors[bk + '_D']); }
     }
   }
 
@@ -1409,10 +1595,10 @@ function forEachSpritePixel(equippedState, frame, cb) {
   for (let li = 0; li < legRows.length; li++) {
     const rowIdx = BASE.length + li;
     const lrow = legRows[li];
-    for (let lc = 0; lc < lrow.length; lc++) { const lk = lrow[lc]; if (lk !== '.') cb(rowIdx, lc, BODY_COLORS[lk], BODY_COLORS[lk + '_D']); }
+    for (let lc = 0; lc < lrow.length; lc++) { const lk = lrow[lc]; if (lk !== '.') cb(rowIdx, lc, colors[lk], colors[lk + '_D']); }
   }
   const arm = ARM_SWING[f];
-  Object.keys(arm).forEach((r) => { arm[r].forEach((cell) => { cb(+r, cell[0], BODY_COLORS[cell[1]], BODY_COLORS[cell[1] + '_D']); }); });
+  Object.keys(arm).forEach((r) => { arm[r].forEach((cell) => { cb(+r, cell[0], colors[cell[1]], colors[cell[1] + '_D']); }); });
 
   const swordItem = equippedState.sword ? itemById('sword', equippedState.sword) : null;
   if (swordItem) emitShape(SWORD_SHAPE, swordItem.colors, cb);
@@ -1694,9 +1880,10 @@ const VIGNETTES = {
       ctx.fillStyle = '#3a2a1a';
       ctx.fillRect(bx, by - 2, 18, 14);
 
-      ctx.fillStyle = '#f0b088';
+      const colors = currentBodyColors();
+      ctx.fillStyle = colors.S;
       ctx.fillRect(bx + 3, by - 12, 15, 11);
-      ctx.fillStyle = '#a06b35';
+      ctx.fillStyle = colors.H;
       ctx.fillRect(bx + 1, by - 14, 19, 5);
 
       ctx.fillStyle = '#8a3a2a';
@@ -1876,8 +2063,16 @@ function drawScene(scrollX, bobY, t) {
   if (vignetteAvatar) {
     vignetteAvatar(t);
   } else {
-    const walkFrame = (battle || ghost) ? 0 : Math.floor(t / 220) % 2;
-    paintSpriteOnto(ctx, gearState.equipped, walkFrame, SPRITE_X, GROUND_Y - SPRITE_H + bobY, SPRITE_SCALE);
+    const walkFrame = (battle || ghost) ? 0 : Math.floor(t / 160) % LEGS.length;
+    const lungeX = avatarLungeX(t);
+    const originX = SPRITE_X + lungeX, originY = GROUND_Y - SPRITE_H + bobY;
+    paintSpriteOnto(ctx, gearState.equipped, walkFrame, originX, originY, SPRITE_SCALE);
+    const attackPhase = avatarAttackPhase(t);
+    if (attackPhase) {
+      drawAttackOverlay(ctx, attackPhase, originX, originY, SPRITE_SCALE);
+      const sparkAlpha = avatarSparkAlpha(t);
+      if (sparkAlpha > 0) drawImpactSpark(ctx, originX + 16 * SPRITE_SCALE, originY + 4 * SPRITE_SCALE, sparkAlpha);
+    }
   }
   ctx.shadowColor = 'transparent';
   ctx.shadowBlur = 0;
@@ -1979,6 +2174,31 @@ function renderCharacterScreen() {
   el.charStatLevel.textContent = `LV ${level}`;
   el.charStatStreak.textContent = `${currentStreak()} DAY STREAK`;
 
+  if (document.activeElement !== el.avatarName) el.avatarName.value = appearanceState.name;
+
+  APPEARANCE_SLOTS.forEach((slotDef) => {
+    const row = document.getElementById('swatches-' + slotDef.key);
+    row.innerHTML = '';
+    slotDef.options.forEach((opt) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'swatch' + (appearanceState[slotDef.key] === opt.id ? ' equipped' : '');
+      const chip = document.createElement('span');
+      chip.className = 'swatch-color';
+      chip.style.background = opt.c;
+      btn.appendChild(chip);
+      btn.addEventListener('click', () => {
+        appearanceState[slotDef.key] = opt.id;
+        writeAppearance(appearanceState);
+        touchState(Date.now());
+        pushGameState();
+        renderCharacterScreen();
+        renderSceneStatic();
+      });
+      row.appendChild(btn);
+    });
+  });
+
   SLOTS.forEach((slot) => {
     const equippedId = gearState.equipped[slot];
     const equippedItem = equippedId ? itemById(slot, equippedId) : null;
@@ -2053,6 +2273,7 @@ function currentStatePayload() {
     f: gearState.foundItems,
     e: gearState.equipped,
     ep: gearState.eventProgress || 0,
+    ap: appearanceState,
     updatedAt: readStateTs(),
   };
 }
@@ -2092,6 +2313,7 @@ function mergeStatePayloads(a, b) {
     f: foundItems,
     e: newer.e || {},
     ep: newer.ep || 0,
+    ap: newer.ap || a.ap || b.ap || null,
     updatedAt: Math.max(a.updatedAt || 0, b.updatedAt || 0),
   };
 }
@@ -2107,6 +2329,16 @@ function applyStatePayload(payload) {
   });
   gearState = { foundItems, equipped, eventProgress: payload.ep || 0 };
   writeGear(gearState);
+
+  const incomingAppearance = payload.ap && typeof payload.ap === 'object' ? payload.ap : {};
+  const nextAppearance = { name: String(incomingAppearance.name || '').slice(0, 14) };
+  APPEARANCE_SLOTS.forEach((slot) => {
+    const valid = incomingAppearance[slot.key] && slot.options.some((o) => o.id === incomingAppearance[slot.key]);
+    nextAppearance[slot.key] = valid ? incomingAppearance[slot.key] : slot.options[0].id;
+  });
+  appearanceState = nextAppearance;
+  writeAppearance(appearanceState);
+
   touchState(payload.updatedAt || Date.now());
 
   renderRewards();
@@ -2375,6 +2607,14 @@ function init() {
 
   el.soundToggle.addEventListener('change', () => {
     localStorage.setItem(LS_SOUND, el.soundToggle.checked ? 'true' : 'false');
+  });
+
+  el.avatarName.addEventListener('change', () => {
+    appearanceState.name = el.avatarName.value.trim().slice(0, 14);
+    el.avatarName.value = appearanceState.name;
+    writeAppearance(appearanceState);
+    touchState(Date.now());
+    pushGameState();
   });
 
   el.toggleWebhookVisibility.addEventListener('click', () => {
