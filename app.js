@@ -2436,7 +2436,7 @@ const TUTORIAL_STEPS = [
   { title: 'GEAR UP', body: "Switch to the Character tab to equip anything you've found. A complete matching set unlocks a loot-chance bonus and a unique glow." },
   { title: 'DUNGEONS & EVENTS', body: "Watch the event meter under your XP bar — filling it up triggers a themed Dungeon Raid or Castle Siege with its own exclusive gear." },
   { title: 'OWN YOUR DATA', body: "Your log and your progress live in a Google Sheet you control — free, private, entirely yours. Setting it up takes about 2 minutes and needs zero coding experience. Here's exactly how:" },
-  { title: 'ADD THE BACKEND', body: "In Google Sheets, open a sheet, then click Extensions, then Apps Script. Delete whatever's there and paste in the backend code — tap the button below to copy it.", copyCode: true },
+  { title: 'ADD THE BACKEND', body: "In Google Sheets, open a sheet, then click Extensions, then Apps Script. Delete whatever's there and paste in the backend code — tap the button below to copy it. On mobile, Extensions is hidden — see the Menu's Webhook section for two ways around that.", copyCode: true },
   { title: 'DEPLOY IT', body: 'Click Deploy, then New deployment. Choose type "Web app," set "Execute as" to Me and "Who has access" to Anyone, then click Deploy.' },
   { title: 'CONNECT THE APP', body: "Copy the web address you're given (it ends in /exec). Open the Menu here, paste it into Webhook, and save. Any device with that same address saved stays in sync automatically." },
   { title: "THAT'S IT!", body: 'Tap Finish to jump in. You can replay this tutorial anytime from the Menu.' },

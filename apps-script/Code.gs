@@ -1,15 +1,30 @@
 /**
  * Pixel Punch Clock webhook backend.
  *
- * Setup:
+ * Setup (desktop, or mobile with "Desktop site" enabled in the browser):
  *   1. Open (or create) the Google Sheet you want to log to.
  *   2. Extensions > Apps Script, delete the boilerplate, paste this file in as Code.gs.
- *      (Container-bound to the sheet, so SpreadsheetApp.getActiveSpreadsheet() below
- *      always resolves to that sheet even when this runs as a headless web app.)
+ *      (Container-bound to the sheet — leave SPREADSHEET_ID below untouched and
+ *      SpreadsheetApp.getActiveSpreadsheet() resolves to that sheet on its own,
+ *      even when this runs headless as a web app.)
  *   3. Deploy > New deployment > type "Web app".
  *      - Execute as: Me
  *      - Who has access: Anyone
  *   4. Copy the /exec URL into the app's Settings panel.
+ *
+ * Setup (mobile, no "Desktop site" needed): Sheets' mobile apps have no
+ * Extensions menu at all, so skip Sheets and go straight to script.google.com
+ * instead — it's a plain website, not gated behind Sheets' mobile UI:
+ *   1. In the Sheets app, create a blank spreadsheet. Share > Copy link, and
+ *      pull the long ID out of the URL (the part between /d/ and /edit).
+ *   2. At script.google.com: New project, delete the boilerplate, paste this
+ *      file in as Code.gs.
+ *   3. Paste that ID as the value of SPREADSHEET_ID just below — with it set,
+ *      every function here uses SpreadsheetApp.openById() instead of relying
+ *      on container-binding, so a standalone (non-bound) script works exactly
+ *      the same as one created through Extensions > Apps Script.
+ *   4. Deploy > New deployment > type "Web app", same settings as above, then
+ *      copy the /exec URL into the app's Settings panel.
  *
  * Each tab (sheet) gets a header row:
  *   Task | Description | Date | Start Time | Stop Time | Duration | Status
@@ -42,6 +57,21 @@
  * this endpoint doesn't need to do anything smarter than store the last
  * snapshot it was given.
  */
+
+// Leave this as-is for a container-bound deployment (Extensions > Apps
+// Script from inside the sheet) — getSpreadsheet_() below falls back to
+// SpreadsheetApp.getActiveSpreadsheet() whenever it's still this placeholder.
+// For a standalone deployment (script.google.com directly, e.g. from a
+// mobile browser where Sheets' Extensions menu isn't reachable), paste your
+// sheet's ID here instead — the long string in its URL between /d/ and /edit.
+var SPREADSHEET_ID = 'PASTE_YOUR_SHEET_ID_HERE_OR_LEAVE_AS_IS_IF_BOUND';
+
+function getSpreadsheet_() {
+  if (SPREADSHEET_ID && SPREADSHEET_ID !== 'PASTE_YOUR_SHEET_ID_HERE_OR_LEAVE_AS_IS_IF_BOUND') {
+    return SpreadsheetApp.openById(SPREADSHEET_ID);
+  }
+  return SpreadsheetApp.getActiveSpreadsheet();
+}
 
 var HEADERS = ['Task', 'Description', 'Date', 'Start Time', 'Stop Time', 'Duration', 'Status'];
 var DATE_FORMAT = 'M/d/yyyy';
@@ -86,7 +116,7 @@ function respondWithJSONP(payload, params) {
 }
 
 function getAllData() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSpreadsheet_();
   var sheets = ss.getSheets();
   var tabs = {};
   for (var i = 0; i < sheets.length; i++) {
@@ -153,7 +183,7 @@ function doPost(e) {
 }
 
 function getOrCreateSheet(tabName) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSpreadsheet_();
   var sheet = ss.getSheetByName(tabName);
   if (!sheet) {
     sheet = ss.insertSheet(tabName);
@@ -172,7 +202,7 @@ var GAME_STATE_SHEET_NAME = '_GameState';
 var GAME_STATE_HEADERS = ['UpdatedAt', 'TotalXp', 'StreakCount', 'LastStreakDate', 'FoundItems', 'Equipped', 'EventProgress', 'Appearance'];
 
 function getOrCreateGameStateSheet_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSpreadsheet_();
   var sheet = ss.getSheetByName(GAME_STATE_SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(GAME_STATE_SHEET_NAME);

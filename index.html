@@ -512,6 +512,18 @@
   .setup-steps li:last-child { margin-bottom: 0; }
   .setup-steps strong { color: var(--text); }
   .setup-steps code { color: var(--accent); }
+  .mobile-note {
+    font-family: var(--mono-font);
+    font-size: 15px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    margin: 10px 0;
+    padding: 10px 12px;
+    border-left: 3px solid var(--accent);
+    background: rgba(41, 173, 255, 0.08);
+  }
+  .mobile-note strong { display: block; color: var(--accent); text-transform: uppercase; font-size: 13px; letter-spacing: .04em; margin-bottom: 6px; }
+  .mobile-note code { color: var(--accent); }
   .sound-toggle-row {
     display: flex;
     align-items: center;
@@ -951,6 +963,10 @@
           <li>Click <strong>Deploy &gt; New deployment</strong>. Choose type <strong>Web app</strong>, set "Execute as" to <strong>Me</strong> and "Who has access" to <strong>Anyone</strong>, then Deploy.</li>
           <li>Copy the web address you're given (it ends in <code>/exec</code>) and paste it into the field above.</li>
         </ol>
+        <div class="mobile-note">
+          <strong>On a phone or tablet?</strong>
+          Sheets' mobile app and mobile browser both hide Extensions. Easiest fix: in your mobile browser, switch to "Desktop site" first (Chrome: tap the menu, then Desktop site; Safari: tap "aA" in the address bar, then Request Desktop Website) &mdash; then the steps above work as written. Or skip Sheets entirely: go to <code>script.google.com</code> instead, start a New project there, paste in the code, and also paste your sheet's ID (the long string in its share link between <code>/d/</code> and <code>/edit</code>) into the <code>SPREADSHEET_ID</code> line near the top before you deploy.
+        </div>
         <button class="btn-secondary" id="copy-code-gs" type="button">Copy the backend code</button>
         <p class="hint">The URL is stored only in this browser's local storage on this device — never in the app's source code, so it's not part of what GitHub Pages serves and isn't visible to anyone else who visits the page.</p>
       </section>
