@@ -496,6 +496,18 @@
     margin-top: 10px;
     line-height: 1.4;
   }
+  .setup-steps {
+    font-family: var(--mono-font);
+    font-size: 16px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    margin: 10px 0;
+    padding-left: 22px;
+  }
+  .setup-steps li { margin-bottom: 8px; }
+  .setup-steps li:last-child { margin-bottom: 0; }
+  .setup-steps strong { color: var(--text); }
+  .setup-steps code { color: var(--accent); }
   .sound-toggle-row {
     display: flex;
     align-items: center;
@@ -695,6 +707,7 @@
   .tutorial-step-counter { font-family: var(--mono-font); font-size: 14px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 10px; text-align: center; }
   .tutorial-step-title { font-family: var(--pixel-font); font-size: 14px; color: var(--good); text-shadow: 2px 2px 0 var(--shadow); margin: 0 0 14px; text-align: center; line-height: 1.6; }
   .tutorial-step-body { font-family: var(--mono-font); font-size: 18px; color: var(--text); line-height: 1.5; text-align: center; margin: 0; }
+  #tutorial-copy-code { margin-top: 16px; }
   .tutorial-nav { display: flex; gap: 10px; padding: 16px; border-top: 3px solid var(--border); flex-shrink: 0; }
   .tutorial-nav .btn-secondary, .tutorial-nav .btn { flex: 1; width: auto; }
   .tutorial-nav #tutorial-back[hidden] { display: none; }
@@ -899,7 +912,15 @@
           </div>
         </div>
         <button class="btn-secondary" id="save-webhook" type="button">Save URL</button>
-        <p class="hint">Deploy the Apps Script in <code>apps-script/Code.gs</code> as a Web App ("Anyone" access), then paste the <code>/exec</code> URL here. It's stored only in this browser's local storage on this device — never in the app's source code, so it's not part of what GitHub Pages serves and isn't visible to anyone else who visits the page.</p>
+        <p class="hint">First time setting this up? No coding experience needed — here's exactly how:</p>
+        <ol class="setup-steps">
+          <li>Open a Google Sheet, then click <strong>Extensions &gt; Apps Script</strong>.</li>
+          <li>Delete whatever's there, then paste in the backend code (tap "Copy the backend code" below first).</li>
+          <li>Click <strong>Deploy &gt; New deployment</strong>. Choose type <strong>Web app</strong>, set "Execute as" to <strong>Me</strong> and "Who has access" to <strong>Anyone</strong>, then Deploy.</li>
+          <li>Copy the web address you're given (it ends in <code>/exec</code>) and paste it into the field above.</li>
+        </ol>
+        <button class="btn-secondary" id="copy-code-gs" type="button">Copy the backend code</button>
+        <p class="hint">The URL is stored only in this browser's local storage on this device — never in the app's source code, so it's not part of what GitHub Pages serves and isn't visible to anyone else who visits the page.</p>
       </section>
 
       <section>
@@ -948,6 +969,7 @@
       <div class="tutorial-step-counter" id="tutorial-step-counter">STEP 1 / 7</div>
       <h3 class="tutorial-step-title" id="tutorial-step-title"></h3>
       <p class="tutorial-step-body" id="tutorial-step-body"></p>
+      <button class="btn-secondary" id="tutorial-copy-code" type="button" hidden>Copy the backend code</button>
     </div>
     <div class="tutorial-nav">
       <button class="btn-secondary" id="tutorial-back" type="button">Back</button>

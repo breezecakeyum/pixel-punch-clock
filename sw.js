@@ -2,7 +2,7 @@
 
 // Bump this on every deploy that changes any app-shell file, so clients
 // pick up the new version instead of serving a stale cached copy forever.
-const CACHE_NAME = 'pixel-punch-clock-shell-v13';
+const CACHE_NAME = 'pixel-punch-clock-shell-v14';
 
 const APP_SHELL = [
   './',
@@ -13,6 +13,7 @@ const APP_SHELL = [
   './icons/icon-512.png',
   './fonts/PressStart2P.woff2',
   './fonts/VT323.woff2',
+  './apps-script/Code.gs',
 ];
 
 self.addEventListener('install', (event) => {

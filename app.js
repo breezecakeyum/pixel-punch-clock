@@ -170,6 +170,8 @@ const el = {
   tutorialStepBody: document.getElementById('tutorial-step-body'),
   tutorialBack: document.getElementById('tutorial-back'),
   tutorialNext: document.getElementById('tutorial-next'),
+  tutorialCopyCode: document.getElementById('tutorial-copy-code'),
+  copyCodeGs: document.getElementById('copy-code-gs'),
   webhookInput: document.getElementById('webhook-url'),
   toggleWebhookVisibility: document.getElementById('toggle-webhook-visibility'),
   saveWebhook: document.getElementById('save-webhook'),
@@ -2201,7 +2203,10 @@ const TUTORIAL_STEPS = [
   { title: 'EARN REWARDS', body: "Your avatar skirmishes the whole time your timer's running, then it becomes the real fight the moment you hit Stop — XP, streak, and a chance at gear. Fights always end in a win; what varies is whether loot drops." },
   { title: 'GEAR UP', body: "Switch to the Character tab to equip anything you've found. A complete matching set unlocks a loot-chance bonus and a unique glow." },
   { title: 'DUNGEONS & EVENTS', body: "Watch the event meter under your XP bar — filling it up triggers a themed Dungeon Raid or Castle Siege with its own exclusive gear." },
-  { title: 'STAY IN SYNC', body: "Your log and your progress both live in your own Google Sheet. Open the Menu to connect it — any device with the same URL saved stays in sync automatically." },
+  { title: 'OWN YOUR DATA', body: "Your log and your progress live in a Google Sheet you control — free, private, entirely yours. Setting it up takes about 2 minutes and needs zero coding experience. Here's exactly how:" },
+  { title: 'ADD THE BACKEND', body: "In Google Sheets, open a sheet, then click Extensions, then Apps Script. Delete whatever's there and paste in the backend code — tap the button below to copy it.", copyCode: true },
+  { title: 'DEPLOY IT', body: 'Click Deploy, then New deployment. Choose type "Web app," set "Execute as" to Me and "Who has access" to Anyone, then click Deploy.' },
+  { title: 'CONNECT THE APP', body: "Copy the web address you're given (it ends in /exec). Open the Menu here, paste it into Webhook, and save. Any device with that same address saved stays in sync automatically." },
   { title: "THAT'S IT!", body: 'Tap Finish to jump in. You can replay this tutorial anytime from the Menu.' },
 ];
 
@@ -2228,6 +2233,7 @@ function renderTutorialStep() {
   el.tutorialStepCounter.textContent = `STEP ${tutorialStepIndex + 1} / ${TUTORIAL_STEPS.length}`;
   el.tutorialStepTitle.textContent = step.title;
   el.tutorialStepBody.textContent = step.body;
+  el.tutorialCopyCode.hidden = !step.copyCode;
   el.tutorialBack.hidden = tutorialStepIndex === 0;
   el.tutorialNext.textContent = tutorialStepIndex === TUTORIAL_STEPS.length - 1 ? 'Finish' : 'Next';
 }
@@ -2245,6 +2251,25 @@ function closeTutorial() {
   // First-run close with nothing configured yet — hand off straight into the
   // Menu so setup is the very next thing, not a separate step to go find.
   if (!localStorage.getItem(LS_WEBHOOK)) openSettingsModal();
+}
+
+// Fetches apps-script/Code.gs from this same deployment (a relative path, so
+// it works unmodified on any fork) and copies it to the clipboard — lets
+// someone with no GitHub experience get the backend code onto their machine
+// without ever leaving the app to go find and copy it themselves.
+let codeGsCache = null;
+async function copyCodeGsToClipboard() {
+  try {
+    if (!codeGsCache) {
+      const res = await fetch('apps-script/Code.gs');
+      if (!res.ok) throw new Error('fetch failed');
+      codeGsCache = await res.text();
+    }
+    await navigator.clipboard.writeText(codeGsCache);
+    toast('Code copied — paste it into Apps Script');
+  } catch {
+    toast('Could not copy automatically — open apps-script/Code.gs from the project and copy it manually');
+  }
 }
 
 /* ---------- Actions ---------- */
@@ -2330,6 +2355,8 @@ function init() {
 
   el.replayTutorial.addEventListener('click', () => { closeSettingsModal(); openTutorial(); });
   el.tutorialSkip.addEventListener('click', closeTutorial);
+  el.tutorialCopyCode.addEventListener('click', copyCodeGsToClipboard);
+  el.copyCodeGs.addEventListener('click', copyCodeGsToClipboard);
   el.tutorialModal.addEventListener('click', (ev) => { if (ev.target === el.tutorialModal) closeTutorial(); });
   el.tutorialBack.addEventListener('click', () => {
     if (tutorialStepIndex > 0) { tutorialStepIndex -= 1; renderTutorialStep(); }
