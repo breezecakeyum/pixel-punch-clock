@@ -1571,7 +1571,11 @@ function renderEventMeter() {
 
 /* ---------- Sprite rendering: equipped items resolve their own colors ---------- */
 
-function forEachSpritePixel(equippedState, frame, cb) {
+// hideRestingSword lets a caller that's about to draw drawAttackOverlay on
+// top (windup/strike — recover already matches SWORD_SHAPE's own geometry,
+// so it's harmless either way) skip the equipped sword's resting shape here,
+// instead of drawing both and getting two overlapping blades.
+function forEachSpritePixel(equippedState, frame, cb, hideRestingSword) {
   // frame is now a 0-3 index into the 4-frame walk cycle (was a 0/1 boolean
   // in the old 2-frame system) — index directly instead of collapsing to 1.
   const f = ((frame % LEGS.length) + LEGS.length) % LEGS.length;
@@ -1601,7 +1605,7 @@ function forEachSpritePixel(equippedState, frame, cb) {
   Object.keys(arm).forEach((r) => { arm[r].forEach((cell) => { cb(+r, cell[0], colors[cell[1]], colors[cell[1] + '_D']); }); });
 
   const swordItem = equippedState.sword ? itemById('sword', equippedState.sword) : null;
-  if (swordItem) emitShape(SWORD_SHAPE, swordItem.colors, cb);
+  if (swordItem && !hideRestingSword) emitShape(SWORD_SHAPE, swordItem.colors, cb);
   const shieldItem = equippedState.shield ? itemById('shield', equippedState.shield) : null;
   if (shieldItem) emitShape(SHIELD_SHAPE, shieldItem.colors, cb);
 }
@@ -1617,9 +1621,9 @@ function emitShape(shape, colors, cb) {
 
 // Shading: light on the left half of the sprite, dark on the right, simulating
 // a light source from the upper-left.
-function paintSpriteOnto(ctx, equippedState, frame, originX, originY, scale) {
+function paintSpriteOnto(ctx, equippedState, frame, originX, originY, scale, hideRestingSword) {
   const cells = [];
-  forEachSpritePixel(equippedState, frame, (row, col, light, dark) => { cells.push([row, col, light, dark]); });
+  forEachSpritePixel(equippedState, frame, (row, col, light, dark) => { cells.push([row, col, light, dark]); }, hideRestingSword);
   cells.forEach((cell) => {
     ctx.fillStyle = cell[1] >= 7 ? cell[3] : cell[2];
     ctx.fillRect(originX + cell[1] * scale, originY + cell[0] * scale, scale, scale);
@@ -2066,8 +2070,12 @@ function drawScene(scrollX, bobY, t) {
     const walkFrame = (battle || ghost) ? 0 : Math.floor(t / 160) % LEGS.length;
     const lungeX = avatarLungeX(t);
     const originX = SPRITE_X + lungeX, originY = GROUND_Y - SPRITE_H + bobY;
-    paintSpriteOnto(ctx, gearState.equipped, walkFrame, originX, originY, SPRITE_SCALE);
     const attackPhase = avatarAttackPhase(t);
+    // While an attack pose is active, drawAttackOverlay below draws the
+    // sword itself (at a different position each pose) — draw the base
+    // sprite without its normal resting-sword shape so the two don't both
+    // render at once as an overlapping double blade.
+    paintSpriteOnto(ctx, gearState.equipped, walkFrame, originX, originY, SPRITE_SCALE, !!attackPhase);
     if (attackPhase) {
       drawAttackOverlay(ctx, attackPhase, originX, originY, SPRITE_SCALE);
       const sparkAlpha = avatarSparkAlpha(t);
